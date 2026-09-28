@@ -32,4 +32,5 @@ venv/
 
 # Editor/tooling
 .claude/
+Source/launcher/README.md
 README.md

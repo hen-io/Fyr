@@ -1,0 +1,198 @@
+:root {
+  --bg: #050509;
+  --text: #f5f5f7;
+  --accent: #ffb347;
+
+  --blob1: #ff6a3d;
+  --blob2: #ffb347;
+  --blob3: #ff4f7b;
+
+  /* Shared base fill for every background effect — never a flat/plain
+     dark color, always a subtle tinted wash of the active palette. */
+  --themed-base:
+    radial-gradient(ellipse 900px 700px at 15% 15%, color-mix(in srgb, var(--blob1) 22%, var(--bg)), transparent 60%),
+    radial-gradient(ellipse 900px 700px at 85% 25%, color-mix(in srgb, var(--blob2) 18%, var(--bg)), transparent 60%),
+    radial-gradient(ellipse 900px 700px at 50% 90%, color-mix(in srgb, var(--blob3) 18%, var(--bg)), transparent 60%),
+    var(--bg, #050509);
+
+  /* Denser wash for effects whose moving elements are sparse (rays, orbs,
+     drifting clouds) — corner-anchored, wider falloff, higher mix so no
+     patch of screen ever reads as flat/near-black between elements. */
+  --themed-base-strong:
+    radial-gradient(ellipse 1500px 1100px at 15% 15%, color-mix(in srgb, var(--blob1) 32%, var(--bg)), transparent 72%),
+    radial-gradient(ellipse 1500px 1100px at 85% 25%, color-mix(in srgb, var(--blob2) 28%, var(--bg)), transparent 72%),
+    radial-gradient(ellipse 1500px 1100px at 25% 85%, color-mix(in srgb, var(--blob3) 28%, var(--bg)), transparent 72%),
+    radial-gradient(ellipse 1500px 1100px at 85% 85%, color-mix(in srgb, var(--accent) 26%, var(--bg)), transparent 72%),
+    var(--bg, #050509);
+}
+
+.light {
+  --bg: #f5f5f5;
+  --text: #111111;
+}
+
+/* ---------------------------------------------------
+   COLOR PALETTES — independent of background effect.
+   Pick any palette with any effect via data-palette /
+   data-bg-effect on the root element.
+   --------------------------------------------------- */
+
+/* 🟧 Amber Blaze */
+:root[data-palette="amber"] {
+  --accent: #ffc45c;
+  --blob1: #ff7a00;
+  --blob2: #ffcf5c;
+  --blob3: #ffe27a;
+}
+
+/* ❤️ Crimson Pulse */
+:root[data-palette="crimson"] {
+  --accent: #ff3b5f;
+  --blob1: #ff003c;
+  --blob2: #ff6a00;
+  --blob3: #ff8fa3;
+}
+
+/* 🌊 Ocean Neon */
+:root[data-palette="ocean"] {
+  --accent: #00d4ff;
+  --blob1: #0077ff;
+  --blob2: #00f0ff;
+  --blob3: #00ffd9;
+}
+
+/* 💜 Violet Storm */
+:root[data-palette="violet"] {
+  --accent: #c27aff;
+  --blob1: #8a00ff;
+  --blob2: #e000ff;
+  --blob3: #ff7ae0;
+}
+
+/* 🌈 Vaporwave */
+:root[data-palette="vaporwave"] {
+  --accent: #69004f;
+  --blob1: #ff0099;
+  --blob2: #ff006a;
+  --blob3: #00b7ff;
+}
+
+/* 🌌 Aurora */
+:root[data-palette="aurora"] {
+  --accent: #6aff9f;
+  --blob1: #00b7ff;
+  --blob2: #6aff9f;
+  --blob3: #00ffd4;
+}
+
+/* 🔥 Sunset Heat */
+:root[data-palette="sunset"] {
+  --accent: #ff7a3f;
+  --blob1: #ff4a00;
+  --blob2: #ffc23a;
+  --blob3: #ff4f7d;
+}
+
+/* 💙 Hyperblue */
+:root[data-palette="hyperblue"] {
+  --accent: #4da3ff;
+  --blob1: #006aff;
+  --blob2: #00ffd4;
+  --blob3: #5fd8ff;
+}
+
+/* 🍭 Candy Pop */
+:root[data-palette="candypop"] {
+  --accent: #ff5ce0;
+  --blob1: #ff5ce0;
+  --blob2: #5cfdff;
+  --blob3: #ffb0ef;
+}
+
+/* ✨ Deep Space */
+:root[data-palette="deepspace"] {
+  --accent: #8ecfff;
+  --blob1: #0a1a3f;
+  --blob2: #1c2f6b;
+  --blob3: #274690;
+}
+
+/* 🌌 Emerald Curtain */
+:root[data-palette="emerald"] {
+  --accent: #00ffa6;
+  --blob1: #00ffa6;
+  --blob2: #8b5cf6;
+  --blob3: #00e5ff;
+}
+
+/* 🩵 Cyber Cyan */
+:root[data-palette="cybercyan"] {
+  --accent: #00fff2;
+  --blob1: #fff700;
+  --blob2: #00fff2;
+  --blob3: #ff00c8;
+}
+
+/* 🌋 Molten Heat */
+:root[data-palette="moltenheat"] {
+  --accent: #ff3d7a;
+  --blob1: #ff5400;
+  --blob2: #ff0058;
+  --blob3: #7a00ff;
+}
+
+/* 🫧 Bubblegum */
+:root[data-palette="bubblegum"] {
+  --accent: #39ff14;
+  --blob1: #ff2fd0;
+  --blob2: #00e5ff;
+  --blob3: #fff700;
+}
+
+/* 💗 Neon Pink */
+:root[data-palette="neonpink"] {
+  --accent: #ff2ec4;
+  --blob1: #00e5ff;
+  --blob2: #ff2ec4;
+  --blob3: #7c4dff;
+}
+
+/* 🟢 Acid Green */
+:root[data-palette="acidgreen"] {
+  --accent: #39ff14;
+  --blob1: #39ff14;
+  --blob2: #ffb300;
+  --blob3: #00ff9d;
+}
+
+/* 🔴 Lava Red */
+:root[data-palette="lavared"] {
+  --accent: #ff2200;
+  --blob1: #ff4500;
+  --blob2: #b3000c;
+  --blob3: #ff8c42;
+}
+
+/* ⚪ Icy Silver */
+:root[data-palette="icysilver"] {
+  --accent: #d6e8ff;
+  --blob1: #8fb8e0;
+  --blob2: #e8f3ff;
+  --blob3: #b0c9e8;
+}
+
+/* 🟩 Toxic Lime */
+:root[data-palette="toxiclime"] {
+  --accent: #aaff00;
+  --blob1: #66ff00;
+  --blob2: #33ff66;
+  --blob3: #ccff33;
+}
+
+/* 🟡 Royal Gold */
+:root[data-palette="royalgold"] {
+  --accent: #ffd700;
+  --blob1: #c9a227;
+  --blob2: #fff2b2;
+  --blob3: #e0b74d;
+}

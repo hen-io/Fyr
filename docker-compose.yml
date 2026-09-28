@@ -1,0 +1,15 @@
+services:
+  fyr:
+    image: ghcr.io/hen-io/fyr:latest
+    container_name: fyr
+    network_mode: host
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    volumes:
+      #   config - apps.config, ui.conf, icons/. What you actually
+      #            hand-edit; kept easy to find on the host on purpose.
+      #   data   - users.json, prefs.json, sessions. Internal state the
+      #            app manages itself - never meant to be hand-edited.
+      - ../Fyr-data/config:/config
+      - ../Fyr-data/data:/data

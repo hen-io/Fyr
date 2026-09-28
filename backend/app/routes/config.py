@@ -107,10 +107,28 @@ def put_apps():
     body = request.get_json(silent=True)
     if not isinstance(body, dict) or not isinstance(body.get("apps"), list):
         return jsonify({"error": "invalid_body"}), 400
+
     existing = _load_yaml(_apps_path(current_app.config), {})
+    existing_categories = dict(existing.get("categories") or {})
+
+    # Optional category metadata overrides (icon/description, the Admin
+    # Panel's Categories tab) - merged onto whatever already existed for
+    # that category name. The apps actually IN a category always come
+    # from the flat "apps" list below (_nest_apps), never from here - this
+    # only ever touches icon/description.
+    overrides = body.get("categories") if isinstance(body.get("categories"), dict) else {}
+    for name, meta in overrides.items():
+        if not isinstance(meta, dict):
+            continue
+        current = existing_categories.get(name)
+        current = dict(current) if isinstance(current, dict) else {}
+        current["icon"] = meta.get("icon")
+        current["description"] = meta.get("description")
+        existing_categories[name] = current
+
     data = {
         "default_mode": body.get("default_mode"),
-        "categories": _nest_apps(body["apps"], existing.get("categories")),
+        "categories": _nest_apps(body["apps"], existing_categories),
     }
     _save_yaml(_apps_path(current_app.config), data)
     return jsonify({"ok": True})

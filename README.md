@@ -5,4 +5,4 @@
   </picture>
 </p>
 
-# TugBoat - easy management and status for multi-stack Docker container setups
+# Fyr - Dashboard with launcher for your selfhosted apps!

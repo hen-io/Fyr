@@ -33,6 +33,15 @@ def health():
 
 @legacy_bp.route("/api/weather")
 def weather():
+    # Matches /api/calendar/upcoming's pattern: "not configured at all" is a
+    # 404, distinct from "configured but Home Assistant didn't answer"
+    # (502, below) - both are no-ops to the frontend either way
+    # (usePolledFetch swallows any non-ok response), but a 404 reads far
+    # less alarming in the browser console than a Bad Gateway for what's
+    # actually just an unset .env.
+    if not current_app.config["HA_URL"] or not current_app.config["HA_TOKEN"]:
+        return jsonify({"error": "weather_not_configured"}), 404
+
     ha = current_app.datasources.get("home_assistant")
     try:
         payload = ha.get_value(current_app.config["HA_WEATHER_ENTITY"])
@@ -54,6 +63,9 @@ def weather():
 
 @legacy_bp.route("/api/home")
 def home_status():
+    if not current_app.config["HA_URL"] or not current_app.config["HA_TOKEN"]:
+        return jsonify({"error": "home_status_not_configured"}), 404
+
     ha = current_app.datasources.get("home_assistant")
     mode = None
     indoor_temp = None

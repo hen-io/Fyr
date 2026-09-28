@@ -1,0 +1,40 @@
+Creating a user / setting a role
+=================================
+
+There is no sign-up page or public register endpoint - by design, the only
+way to create an account is this command, run on the server, inside the
+running container (replace "Fyr" with your container's actual name if you
+named it differently):
+
+    docker exec -it Fyr python3 manage.py adduser
+
+It's interactive and will ask for:
+
+    Username:
+    Role [visitor/admin] (default: visitor):
+    Password:
+    Confirm password:
+
+Roles
+-----
+  visitor  - can log in, gets synced personal settings across devices, and
+             can see tiles marked visibility: authenticated. Cannot change
+             config.
+  admin    - everything a visitor can, plus: edit apps.config/ui.conf via
+             the API, enter dashboard edit mode (move/resize widgets),
+             restart the container from Settings, and anything else
+             gated behind an admin check.
+
+If you leave the role prompt blank, it defaults to "visitor" - type
+"admin" explicitly for an admin account.
+
+Changing a role later
+----------------------
+Run the same command again with the same username - it'll ask to
+overwrite, then prompt for the role and password again. There's currently
+no way to change just the role without also resetting the password.
+
+Changing your own password (already logged in)
+------------------------------------------------
+No need for manage.py - Settings -> Konto -> Endre passord, from the app
+itself, once logged in.

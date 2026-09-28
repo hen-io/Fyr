@@ -1,11 +1,10 @@
 # Fyr - Dashboard with launcher for your selfhosted apps!
-
-FROM node:22-alpine AS frontend-builder
-WORKDIR /frontend
-COPY launcher/package.json launcher/package-lock.json ./
-RUN npm ci
-COPY launcher/ ./
-RUN npm run build
+#
+# The frontend is already built before this ever runs (this repo ships
+# launcher/dist/, not the raw React source it was built from - see
+# launcher/package.json for the version that was built), so there's no
+# Node stage here at all - just the backend and that pre-built static
+# output going into the image as-is.
 
 FROM python:3.13-alpine
 
@@ -17,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app/ ./app/
 COPY backend/manage.py backend/wsgi.py ./
 
-COPY --from=frontend-builder /frontend/dist/ /usr/share/nginx/html/
+COPY launcher/dist/ /usr/share/nginx/html/
 
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/supervisord.conf /etc/supervisord.conf

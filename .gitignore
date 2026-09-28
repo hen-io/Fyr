@@ -18,9 +18,12 @@ live backup*/
 logs/
 /latest_build/
 
-# Node
+# Node - deliberately NOT ignoring dist/ here: launcher/dist/ is this
+# repo's actual shipped frontend (built ahead of time, committed as-is -
+# see launcher/package.json for the version it was built from, and the
+# Dockerfile, which copies it directly). A blanket "dist/" rule would
+# silently stop git from ever tracking it.
 node_modules/
-dist/
 dist-ssr/
 *.local
 

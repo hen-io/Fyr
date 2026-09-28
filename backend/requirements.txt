@@ -1,5 +1,0 @@
-flask
-gunicorn
-paho-mqtt
-flask-session
-pyyaml

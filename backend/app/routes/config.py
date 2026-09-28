@@ -20,13 +20,16 @@ def _layout_path(cfg):
 
 
 def _flatten_apps(data):
-    """On disk, apps.config groups apps under "categories: {name: [app,
-    ...]}" - easier to hand-edit as one block per category than a flat list
-    with a repeated "category" field. The API still speaks the flat form
-    (each app tagged with "category", omitted for _uncategorized), so
-    TileGrid's existing per-app grouping logic doesn't need to change."""
+    """On disk, apps.config groups apps under "categories: {name: {icon,
+    description, apps: [app, ...]}}" - easier to hand-edit as one block per
+    category than a flat list with a repeated "category" field, and lets a
+    category carry its own icon/description. The API still speaks the flat
+    app form (each app tagged with "category", omitted for _uncategorized),
+    so TileGrid's existing per-app grouping logic doesn't need to change -
+    see _category_meta for the icon/description side of a category."""
     flat = []
-    for category, apps in (data.get("categories") or {}).items():
+    for category, cat_data in (data.get("categories") or {}).items():
+        apps = (cat_data or {}).get("apps") or [] if isinstance(cat_data, dict) else (cat_data or [])
         for app in apps:
             entry = dict(app)
             if category != _UNCATEGORIZED:
@@ -35,14 +38,38 @@ def _flatten_apps(data):
     return flat
 
 
-def _nest_apps(flat_apps):
-    """Inverse of _flatten_apps - preserves first-seen category order."""
+def _category_meta(data):
+    """{name: {icon, description}} for every category that set either -
+    icon is an MDI icon name (see frontend's constants/categories.js for
+    the curated set it resolves against), not raw SVG path data."""
+    meta = {}
+    for category, cat_data in (data.get("categories") or {}).items():
+        if category == _UNCATEGORIZED or not isinstance(cat_data, dict):
+            continue
+        icon = cat_data.get("icon")
+        description = cat_data.get("description")
+        if icon or description:
+            meta[category] = {"icon": icon, "description": description}
+    return meta
+
+
+def _nest_apps(flat_apps, existing_categories):
+    """Inverse of _flatten_apps - preserves first-seen category order and
+    carries over each category's existing icon/description (there's no
+    admin UI to edit those yet, so a PUT of the flat app list alone must
+    not silently drop them)."""
     categories = {}
     for app in flat_apps:
         entry = dict(app)
         category = entry.pop("category", None) or _UNCATEGORIZED
         categories.setdefault(category, []).append(entry)
-    return categories
+    result = {}
+    for name, apps in categories.items():
+        existing = (existing_categories or {}).get(name)
+        meta = dict(existing) if isinstance(existing, dict) else {}
+        meta["apps"] = apps
+        result[name] = meta
+    return result
 
 
 def _load_yaml(path, default):
@@ -71,7 +98,7 @@ def get_apps():
     # when neither a visitor's own personal preference nor an app's own
     # default_mode is set - distinct from (and lower-priority than) the
     # per-app "default_mode" field inside each app entry.
-    return jsonify({"default_mode": data.get("default_mode"), "apps": apps})
+    return jsonify({"default_mode": data.get("default_mode"), "categories": _category_meta(data), "apps": apps})
 
 
 @config_bp.route("/api/apps", methods=["PUT"])
@@ -80,7 +107,11 @@ def put_apps():
     body = request.get_json(silent=True)
     if not isinstance(body, dict) or not isinstance(body.get("apps"), list):
         return jsonify({"error": "invalid_body"}), 400
-    data = {"default_mode": body.get("default_mode"), "categories": _nest_apps(body["apps"])}
+    existing = _load_yaml(_apps_path(current_app.config), {})
+    data = {
+        "default_mode": body.get("default_mode"),
+        "categories": _nest_apps(body["apps"], existing.get("categories")),
+    }
     _save_yaml(_apps_path(current_app.config), data)
     return jsonify({"ok": True})
 

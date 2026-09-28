@@ -6,10 +6,9 @@ on:
     paths:
       - "backend/**"
       - "frontend/**"
-      - "launcher/**"
       - "docker/**"
       - "Dockerfile"
-      - ".github/workflows/docker-publish.yml"
+      - ".github/workflows/build-publish.yml"
   workflow_dispatch: {}
 
 env:
@@ -33,7 +32,7 @@ jobs:
 
       - name: Read app version
         id: version
-        run: echo "value=$(jq -r .version launcher/package.json)" >> "$GITHUB_OUTPUT"
+        run: echo "value=$(jq -r .version frontend/package.json)" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v5

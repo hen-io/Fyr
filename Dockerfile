@@ -2,7 +2,7 @@
 #
 # The frontend is already built before this ever runs (this repo ships
 # frontend/, not the raw React source it was built from - see
-# launcher/package.json for the version that was built), so there's no
+# frontend/package.json for the version that was built), so there's no
 # Node stage here at all - just the backend and that pre-built static
 # output going into the image as-is.
 
@@ -17,6 +17,9 @@ COPY backend/app/ ./app/
 COPY backend/manage.py backend/wsgi.py ./
 
 COPY frontend/ /usr/share/nginx/html/
+# package.json rides along in frontend/ purely as version metadata for the
+# publish workflow to read - not something nginx should actually serve.
+RUN rm -f /usr/share/nginx/html/package.json
 
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/supervisord.conf /etc/supervisord.conf

@@ -18,11 +18,16 @@ COPY backend/manage.py backend/wsgi.py ./
 
 COPY frontend/ /usr/share/nginx/html/
 # package.json rides along in frontend/ purely as version metadata for the
-# publish workflow to read - not something nginx should actually serve.
+# publish workflow to read - not something nginx should actually serve. A
+# copy lives at /app/package.json instead, for entrypoint.sh's startup
+# banner to read.
+COPY frontend/package.json /app/package.json
 RUN rm -f /usr/share/nginx/html/package.json
 
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/supervisord.conf /etc/supervisord.conf
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 80
-CMD ["supervisord", "-c", "/etc/supervisord.conf"]
+CMD ["/entrypoint.sh"]

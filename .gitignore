@@ -1,37 +1,22 @@
-# Secrets and admin-editable runtime data - never committed. Real HA
-# tokens, session secrets, and user account hashes live in these. Root-
-# level only (leading slash) so this never matches an unrelated same-named
-# folder elsewhere in the tree.
-.env
-.env.*
-!.env.example
-/config/
-/data/
+# .env
+# .env.*
+# !.env.example
+# /config/
+# /data/
 
-# Local build/backup output and run logs - generated, not source.
-# Unrelated to the /data/ above (note the leading dot here).
-.data/
-Builds/
-builds/
-live/
-live backup*/
-logs/
-/latest_build/
+# .data/
+# Builds/
+# builds/
+# live/
+# live backup*/
+# logs/
+# /latest_build/
 
-# Node - deliberately NOT ignoring dist/ here: launcher/dist/ is this
-# repo's actual shipped frontend (built ahead of time, committed as-is -
-# see launcher/package.json for the version it was built from, and the
-# Dockerfile, which copies it directly). A blanket "dist/" rule would
-# silently stop git from ever tracking it.
-node_modules/
-dist-ssr/
-*.local
+# #NPM
+# dist-ssr/
+# *.local
 
-# Python
-__pycache__/
-*.pyc
-.venv/
-venv/
-
-# Editor/tooling
-.claude/
+# __pycache__/
+# *.pyc
+# .venv/
+# venv/

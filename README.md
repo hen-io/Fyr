@@ -5,6 +5,4 @@
   </picture>
 </p>
 
-# TugBoat - Easy management and status-overview for multi-stack Docker container setups
-
-
+# Fyr - Dashboard and app launcher for yuor selfhosted apps . the perceft home portal!

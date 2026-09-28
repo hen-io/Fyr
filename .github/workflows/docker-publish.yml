@@ -1,11 +1,11 @@
-name: Build and publish Fyr image
+name: Build and publish new Fyr OCI image
 
 on:
   push:
     branches: [main]
     paths:
-      - "Source/backend/**"
-      - "Source/launcher/**"
+      - "backend/**"
+      - "launcher/**"
       - "docker/**"
       - "Dockerfile"
       - ".github/workflows/docker-publish.yml"
@@ -28,14 +28,11 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_PAT }}
 
-      # Source/launcher/package.json's "version" is the one place this
-      # number is defined - the About page reads it via appInfo.js, and
-      # this tags the image with the same value, so both always agree.
       - name: Read app version
         id: version
-        run: echo "value=$(jq -r .version Source/launcher/package.json)" >> "$GITHUB_OUTPUT"
+        run: echo "value=$(jq -r .version launcher/package.json)" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v5

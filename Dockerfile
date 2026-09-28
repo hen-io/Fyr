@@ -24,5 +24,5 @@ RUN rm -f /usr/share/nginx/html/package.json
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/supervisord.conf /etc/supervisord.conf
 
-EXPOSE 8080
+EXPOSE 80
 CMD ["supervisord", "-c", "/etc/supervisord.conf"]

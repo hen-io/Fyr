@@ -2,7 +2,8 @@ services:
   fyr:
     image: ghcr.io/hen-io/fyr:latest
     container_name: fyr
-    network_mode: host
+    ports:
+      - "80:80"
     restart: unless-stopped
     env_file:
       - ./.env

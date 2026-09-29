@@ -79,7 +79,10 @@ def widget_events(widget_id):
     configured = widget.get("calendars")
     if not isinstance(configured, list) or not configured:
         configured = [e.strip() for e in current_app.config["HA_CALENDAR_ENTITY"].split(",") if e.strip()]
-    entities = [e for e in configured if isinstance(e, str) and _CALENDAR_ID.match(e)][:12]
+    # Entries are plain entity ids or objects ({entity, name, icon, ...} -
+    # display options the frontend applies itself); only the id matters here.
+    ids = [item.get("entity") if isinstance(item, dict) else item for item in configured]
+    entities = [e for e in ids if isinstance(e, str) and _CALENDAR_ID.match(e)][:12]
     if not entities:
         return jsonify({"error": "calendar_not_configured"}), 404
 

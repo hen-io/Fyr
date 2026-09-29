@@ -1,4 +1,5 @@
 import fnmatch
+import ssl
 import threading
 import time
 import urllib.error
@@ -6,6 +7,8 @@ import urllib.request
 from urllib.parse import urlparse
 
 from flask import Blueprint, current_app, jsonify, request
+
+from .config import _apps_path, _flatten_apps, _hidden_categories, _load_yaml, _viewer
 
 # Runs the up/down check server-side instead of in the browser. Two reasons:
 # 1. The browser version could only tell "up" from "down" for cross-origin
@@ -27,6 +30,38 @@ status_bp = Blueprint("status", __name__)
 def _hostname_allowed(hostname, patterns):
     hostname = (hostname or "").lower()
     return any(fnmatch.fnmatch(hostname, pattern.lower()) for pattern in patterns)
+
+
+def _origin(url):
+    parsed = urlparse(url or "")
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return None
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError:
+        return None
+    return (parsed.scheme, parsed.hostname.lower(), port)
+
+
+def _configured_origins():
+    """Origins (scheme, host, port) of the apps the admin configured - the
+    tile's url or its internal (status-check) url. Checking these needs no
+    entry in STATUS_ALLOWED_HOSTS: they were entered by an admin, so the
+    endpoint can only ever probe addresses that are already on the dashboard.
+    Apps the caller may not see (hidden category / logged-in-only) are left
+    out, so status can't be used to probe them."""
+    data = _load_yaml(_apps_path(current_app.config), {})
+    viewer = _viewer()
+    hidden = _hidden_categories(data, viewer)
+    origins = set()
+    for app in _flatten_apps(data):
+        if app.get("category") in hidden or (viewer == "anonymous" and app.get("visibility") == "authenticated"):
+            continue
+        for key in ("internalUrl", "url"):
+            origin = _origin(app.get(key))
+            if origin:
+                origins.add(origin)
+    return origins
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -58,7 +93,10 @@ def check_status():
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         return jsonify({"status": "unknown", "error": "invalid_url"}), 400
 
-    if not _hostname_allowed(parsed.hostname, current_app.config["STATUS_ALLOWED_HOSTS"]):
+    if not (
+        _hostname_allowed(parsed.hostname, current_app.config["STATUS_ALLOWED_HOSTS"])
+        or _origin(target) in _configured_origins()
+    ):
         return jsonify({"status": "unknown", "error": "host_not_allowed"}), 403
 
     now = time.time()
@@ -80,6 +118,10 @@ def check_status():
         # 4xx/5xx is "down", same as a plain status == 200 check would
         # have treated it.
         up = 300 <= e.code < 400
+    except urllib.error.URLError as e:
+        # A self-signed / internal-CA certificate (common for local addresses)
+        # still means the host answered - it is up, just not publicly trusted.
+        up = isinstance(getattr(e, "reason", None), ssl.SSLCertVerificationError)
     except Exception:
         up = False
 

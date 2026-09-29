@@ -1,7 +1,7 @@
 {
   "name": "Fyr",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "author": "Henrik Isefjær Olsen",
   "homepage": "https://github.com/hen-io/Fyr",
   "type": "module",

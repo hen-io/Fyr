@@ -1,8 +1,9 @@
+import json
 import os
 
 from flask import Blueprint, current_app, jsonify, request, send_from_directory, session
 
-from ..auth import change_password, current_user, load_users, require_role, save_users, verify_login
+from ..auth import USERNAME_RE, change_password, current_user, load_users, require_role, save_users, verify_login
 from ..prefs import clear_prefs, get_prefs, set_prefs
 from ..ratelimit import is_locked_out, record_failure, record_success
 
@@ -72,7 +73,7 @@ def get_my_prefs():
 @require_role()
 def put_my_prefs():
     body = request.get_json(silent=True)
-    if not isinstance(body, dict):
+    if not isinstance(body, dict) or len(json.dumps(body)) > 65536:
         return jsonify({"error": "invalid_body"}), 400
     set_prefs(session["username"], body, current_app.config)
     return jsonify({"ok": True})
@@ -187,6 +188,6 @@ def get_avatar(username):
     # the same way serve_icon (config.py) already relies on for filenames.
     users = load_users(current_app.config)
     ext = users.get(username, {}).get("avatar_ext")
-    if not ext:
+    if not ext or not USERNAME_RE.match(username):
         return jsonify({"error": "not_found"}), 404
     return send_from_directory(_avatars_dir(current_app.config), f"{username}.{ext}")

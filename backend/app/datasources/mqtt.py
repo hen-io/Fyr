@@ -76,6 +76,10 @@ class MqttSource(DataSource):
                 history.append((now, payload))
 
     def ensure_subscribed(self, topic):
+        # Wildcards would subscribe to a whole tree of traffic - exactly the
+        # firehose this source is designed to avoid.
+        if not topic or "#" in topic or "+" in topic:
+            raise ValueError("MQTT wildcards are not allowed in widget topics")
         with self._lock:
             if topic in self._subscribed:
                 return

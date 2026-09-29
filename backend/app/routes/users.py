@@ -1,6 +1,6 @@
 from flask import Blueprint, current_app, jsonify, request, session
 
-from ..auth import VALID_ROLES, create_user, load_users, require_role, save_users
+from ..auth import USERNAME_RE, VALID_ROLES, create_user, load_users, require_role, save_users
 
 users_bp = Blueprint("users", __name__)
 
@@ -26,6 +26,8 @@ def add_user():
 
     if not username:
         return jsonify({"error": "username_required"}), 400
+    if not USERNAME_RE.match(username):
+        return jsonify({"error": "invalid_username"}), 400
     if role not in VALID_ROLES:
         return jsonify({"error": "invalid_role"}), 400
     if len(password) < 8:

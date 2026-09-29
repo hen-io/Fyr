@@ -1,6 +1,8 @@
 import os
 
-from flask import Flask, jsonify
+from urllib.parse import urlparse
+
+from flask import Flask, jsonify, request
 from flask_session import Session
 
 from . import connections
@@ -59,6 +61,23 @@ def create_app():
 
     # Every route here is a JSON API - Flask's default HTML error pages
     # would be a surprise to any caller, so every error response is JSON too.
+    # Cookie-authenticated state changes must come from this site. SameSite=Lax
+    # already blocks cross-site POST/PUT/DELETE cookies in current browsers;
+    # this is the second layer for everything else: a request carrying an
+    # Origin that isn't our own host is refused.
+    @app.before_request
+    def reject_cross_origin_writes():
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return None
+        origin = request.headers.get("Origin")
+        if not origin:
+            return None
+        origin_host = (urlparse(origin).hostname or "").lower()
+        own_host = (request.host.split(":")[0] if not request.host.startswith("[") else request.host).lower()
+        if origin_host != own_host:
+            return jsonify({"error": "cross_origin_blocked"}), 403
+        return None
+
     @app.errorhandler(404)
     def not_found(_e):
         return jsonify({"error": "not_found"}), 404

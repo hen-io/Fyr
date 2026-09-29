@@ -1,11 +1,16 @@
 import json
 import os
+import re
 from functools import wraps
 
 from flask import current_app, jsonify, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 VALID_ROLES = ("visitor", "admin")
+
+# Usernames end up in file names (avatars/<username>.png) and URLs, so they
+# are restricted to a safe alphabet - no path separators, no leading dot.
+USERNAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$")
 
 # A real-looking hash to check a nonexistent username's password against, so a
 # lookup miss costs the same scrypt work as a real one - without this,
@@ -47,6 +52,8 @@ def change_password(username, new_password, config=None):
 def create_user(username, password, role, config=None):
     if role not in VALID_ROLES:
         raise ValueError(f"role must be one of {VALID_ROLES}")
+    if not USERNAME_RE.match(username or ""):
+        raise ValueError("username may only contain letters, digits, '.', '_' and '-' (max 64)")
     users = load_users(config)
     users[username] = {
         "password_hash": generate_password_hash(password),

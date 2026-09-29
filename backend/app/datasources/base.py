@@ -21,6 +21,11 @@ class DataSource(ABC):
         Assistant with no URL/token) - lets the editor say so."""
         return True
 
+    def check(self):
+        """Live connectivity probe for the admin panel:
+        {"connected": bool, "detail": str|None, "latency_ms": int|None}."""
+        return {"connected": True, "detail": None, "latency_ms": None}
+
     def list_keys(self):
         """Known keys for editor autocompletion: [{"key", "name", "unit"}].
         Optional; a source that can't enumerate returns nothing."""

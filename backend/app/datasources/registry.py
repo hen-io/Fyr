@@ -27,6 +27,18 @@ class DataSourceRegistry:
             for name in ("home_assistant", "mqtt")
         }
 
+    def check_all(self):
+        out = {}
+        for name in ("home_assistant", "mqtt"):
+            if name not in self._sources:
+                out[name] = {"enabled": False}
+                continue
+            try:
+                out[name] = {"enabled": True, **self._sources[name].check()}
+            except Exception as err:
+                out[name] = {"enabled": True, "connected": False, "detail": str(err)[:120], "latency_ms": None}
+        return out
+
     def get(self, name):
         source = self._sources.get(name)
         if not source:

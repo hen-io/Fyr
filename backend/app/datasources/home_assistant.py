@@ -1,5 +1,6 @@
 import json
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -42,6 +43,23 @@ class HomeAssistantSource(DataSource):
 
     def is_configured(self):
         return bool(self.url and self.token)
+
+    def check(self):
+        if not self.is_configured():
+            return {"connected": False, "detail": "HA_URL/HA_TOKEN er ikke satt", "latency_ms": None}
+        started = time.time()
+        try:
+            body = self._request("/api/config") or {}
+        except urllib.error.HTTPError as err:
+            detail = "Ugyldig token" if err.code == 401 else f"HTTP {err.code}"
+            return {"connected": False, "detail": detail, "latency_ms": None}
+        except Exception as err:
+            return {"connected": False, "detail": str(getattr(err, "reason", err))[:120], "latency_ms": None}
+        return {
+            "connected": True,
+            "detail": f"Home Assistant {body.get('version', '')}".strip(),
+            "latency_ms": int((time.time() - started) * 1000),
+        }
 
     def list_keys(self):
         states = self._request("/api/states") or []

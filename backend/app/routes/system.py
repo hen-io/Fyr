@@ -6,7 +6,7 @@ import sys
 import threading
 import time
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, current_app, jsonify
 
 from ..auth import require_role
 
@@ -44,6 +44,7 @@ def system_info():
             "uptime_seconds": int(time.time() - _START_TIME),
             "python_version": platform.python_version(),
             "platform": sys.platform,
+            "connections": current_app.datasources.check_all(),
         }
     )
 

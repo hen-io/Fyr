@@ -32,6 +32,7 @@ class MqttSource(DataSource):
         self._subscribed = set()
         self._lock = threading.Lock()
         self._client = None
+        self._connected = False
 
     def start(self):
         import paho.mqtt.client as mqtt
@@ -44,6 +45,7 @@ class MqttSource(DataSource):
             client.username_pw_set(self.username, self.password)
         client.on_connect = self._on_connect
         client.on_message = self._on_message
+        client.on_disconnect = self._on_disconnect
         client.reconnect_delay_set(min_delay=1, max_delay=30)
         # connect_async + loop_start: a broker that's down (or slow) at
         # startup must not stop the whole app from booting - the client
@@ -54,7 +56,11 @@ class MqttSource(DataSource):
 
     # *args: paho 1.x passes (client, userdata, flags, rc), 2.x passes
     # (client, userdata, flags, reason_code, properties) - only `client` is used.
+    def _on_disconnect(self, *args):
+        self._connected = False
+
     def _on_connect(self, client, userdata, flags, *args):
+        self._connected = True
         with self._lock:
             topics = list(self._subscribed)
         for topic in topics:
@@ -83,6 +89,12 @@ class MqttSource(DataSource):
             if key not in self._values:
                 raise KeyError(f"No message received yet for MQTT topic '{key}'")
             return self._values[key]
+
+    def check(self):
+        detail = f"{self.host}:{self.port}"
+        if self._connected:
+            return {"connected": True, "detail": detail, "latency_ms": None}
+        return {"connected": False, "detail": f"Ingen forbindelse til {detail}", "latency_ms": None}
 
     def list_keys(self):
         # Only topics something has already asked for (and heard back on) are

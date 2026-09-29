@@ -27,6 +27,7 @@ _ALLOWED = {
     "tileOpacity": int,
     "tileBlur": int,
     "gridMargin": int,
+    "contentWidth": int,
     "fullscreenMargin": int,
 }
 
@@ -39,7 +40,7 @@ def _clean_defaults(raw):
             continue
         if isinstance(value, str):
             value = value.strip()[:40]
-        elif not -1000 <= value <= 1000:
+        elif not -1000 <= value <= 5000:
             continue
         cleaned[key] = value
     return cleaned

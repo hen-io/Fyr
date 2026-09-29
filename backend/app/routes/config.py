@@ -3,13 +3,14 @@ import re
 
 from flask import Blueprint, current_app, jsonify, request, send_from_directory, session
 
-from ..auth import require_role
+from ..auth import current_user, require_role
 from ..fileio import load_yaml, save_yaml
 
 config_bp = Blueprint("config", __name__)
 
 
 _UNCATEGORIZED = "_uncategorized"
+_VIEWERS = ("anonymous", "visitor", "admin")
 
 
 def _apps_path(cfg):
@@ -49,8 +50,9 @@ def _category_meta(data):
             continue
         icon = cat_data.get("icon")
         description = cat_data.get("description")
-        if icon or description or not cat_data.get("apps"):
-            meta[category] = {"icon": icon, "description": description}
+        hidden_for = [v for v in (cat_data.get("hidden_for") or []) if v in _VIEWERS]
+        if icon or description or hidden_for or not cat_data.get("apps"):
+            meta[category] = {"icon": icon, "description": description, "hidden_for": hidden_for}
     return meta
 
 
@@ -124,20 +126,47 @@ def _clean_apps(raw):
     return cleaned, None
 
 
+def _viewer():
+    """Which audience the current request belongs to: not logged in, a
+    logged-in visitor, or an admin."""
+    user = current_user(current_app.config)
+    if not user:
+        return "anonymous"
+    return "admin" if user.get("role") == "admin" else "visitor"
+
+
+def _hidden_categories(data, viewer):
+    """Categories whose `hidden_for` list names this viewer class."""
+    hidden = set()
+    for name, cat in (data.get("categories") or {}).items():
+        if isinstance(cat, dict) and viewer in (cat.get("hidden_for") or []):
+            hidden.add(name)
+    return hidden
+
+
 @config_bp.route("/api/apps", methods=["GET"])
 def get_apps():
     data = _load_yaml(_apps_path(current_app.config), {})
-    apps = _flatten_apps(data)
-    if "username" not in session:
+    viewer = _viewer()
+    # ?all=1 is the admin editor's unfiltered view (an admin can hide a
+    # category from admins too, and must still be able to edit it).
+    show_all = request.args.get("all") == "1" and viewer == "admin"
+    hidden = set() if show_all else _hidden_categories(data, viewer)
+    apps = [a for a in _flatten_apps(data) if a.get("category") not in hidden]
+    if viewer == "anonymous":
         # visibility: "authenticated" must actually hide the tile, not just
         # let the frontend choose not to render it - otherwise anyone can
         # read it straight off this endpoint. Filter here, not in TileGrid.
         apps = [app for app in apps if app.get("visibility") != "authenticated"]
+    meta = {k: v for k, v in _category_meta(data).items() if k not in hidden}
+    if not show_all:
+        for entry in meta.values():
+            entry.pop("hidden_for", None)
     # default_mode here is the GLOBAL fallback ("window"/"tab"), used only
     # when neither a visitor's own personal preference nor an app's own
     # default_mode is set - distinct from (and lower-priority than) the
     # per-app "default_mode" field inside each app entry.
-    return jsonify({"default_mode": data.get("default_mode"), "categories": _category_meta(data), "apps": apps})
+    return jsonify({"default_mode": data.get("default_mode"), "categories": meta, "apps": apps})
 
 
 @config_bp.route("/api/apps", methods=["PUT"])
@@ -163,6 +192,14 @@ def put_apps():
         current = dict(current) if isinstance(current, dict) else {}
         current["icon"] = meta.get("icon")
         current["description"] = meta.get("description")
+        # Only touched when the request says something about it - a save
+        # from a tab that doesn't know about audiences must not erase it.
+        if "hidden_for" in meta:
+            hidden_for = [v for v in (meta.get("hidden_for") or []) if v in _VIEWERS] if isinstance(meta.get("hidden_for"), list) else []
+            if hidden_for:
+                current["hidden_for"] = hidden_for
+            else:
+                current.pop("hidden_for", None)
         existing_categories[name] = current
 
     apps, error = _clean_apps(body["apps"])
@@ -179,7 +216,10 @@ def put_apps():
     for name in overrides:
         if name != _UNCATEGORIZED and name not in categories:
             meta = overrides[name] if isinstance(overrides[name], dict) else {}
+            hidden_for = [v for v in (meta.get("hidden_for") or []) if v in _VIEWERS] if isinstance(meta.get("hidden_for"), list) else []
             categories[name] = {"icon": meta.get("icon"), "description": meta.get("description"), "apps": []}
+            if hidden_for:
+                categories[name]["hidden_for"] = hidden_for
     data = {"default_mode": default_mode, "categories": categories}
     _save_yaml(_apps_path(current_app.config), data)
     return jsonify({"ok": True})
@@ -189,13 +229,17 @@ def put_apps():
 def get_layout():
     data = _load_yaml(_layout_path(current_app.config), {"layout": {}})
     layout = data.get("layout", {})
-    if "username" not in session:
-        # Layout entries are keyed by app title, so a hidden app's title
-        # (though not its url/icon) would otherwise leak through here even
-        # after get_apps() filters it out - same reasoning as there.
-        apps = _flatten_apps(_load_yaml(_apps_path(current_app.config), {}))
-        hidden_titles = {app["title"] for app in apps if app.get("visibility") == "authenticated"}
-        layout = {title: pos for title, pos in layout.items() if title not in hidden_titles}
+    # Layout entries are keyed by app title, so a hidden app's title
+    # (though not its url/icon) would otherwise leak through here even
+    # after get_apps() filters it out - same reasoning as there.
+    apps_data = _load_yaml(_apps_path(current_app.config), {})
+    viewer = _viewer()
+    hidden = _hidden_categories(apps_data, viewer)
+    hidden_titles = set()
+    for app in _flatten_apps(apps_data):
+        if app.get("category") in hidden or (viewer == "anonymous" and app.get("visibility") == "authenticated"):
+            hidden_titles.add(app["title"])
+    layout = {title: pos for title, pos in layout.items() if title not in hidden_titles}
     return jsonify(layout)
 
 

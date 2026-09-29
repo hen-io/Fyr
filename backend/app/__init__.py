@@ -3,11 +3,13 @@ import os
 from flask import Flask, jsonify
 from flask_session import Session
 
+from . import connections
 from .config import Config
 from .datasources.registry import DataSourceRegistry
 from .routes.auth import auth_bp
 from .routes.calendar import calendar_bp
 from .routes.config import config_bp
+from .routes.connections import connections_bp
 from .routes.defaults import defaults_bp
 from .routes.legacy import legacy_bp
 from .routes.status import status_bp
@@ -42,13 +44,14 @@ def create_app():
     # Attached directly to the app object (not app.config, which Flask
     # expects to hold only plain config values) so every route can reach it
     # via current_app.datasources.
-    app.datasources = DataSourceRegistry(Config)
+    app.datasources = DataSourceRegistry(connections.effective(Config, Config.DATA_DIR))
 
     app.register_blueprint(legacy_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(status_bp)
     app.register_blueprint(config_bp)
     app.register_blueprint(defaults_bp)
+    app.register_blueprint(connections_bp)
     app.register_blueprint(widgets_bp)
     app.register_blueprint(calendar_bp)
     app.register_blueprint(system_bp)

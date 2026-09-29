@@ -7,16 +7,26 @@ class DataSourceRegistry:
     Adding a third source type means adding one branch here."""
 
     def __init__(self, config):
-        self._sources = {
-            "home_assistant": HomeAssistantSource(
-                config.HA_URL, config.HA_TOKEN, cache_ttl=config.WEATHER_CACHE_TTL
-            ),
-        }
+        self._sources = {}
+        self._build(config)
 
-        if config.MQTT_ENABLED:
+    def _build(self, config):
+        sources = {
+            "home_assistant": HomeAssistantSource(config.HA_URL, config.HA_TOKEN, cache_ttl=config.WEATHER_CACHE_TTL),
+        }
+        if config.MQTT_ENABLED and config.MQTT_HOST:
             mqtt_source = MqttSource(config.MQTT_HOST, config.MQTT_PORT, config.MQTT_USER, config.MQTT_PASS)
             mqtt_source.start()
-            self._sources["mqtt"] = mqtt_source
+            sources["mqtt"] = mqtt_source
+        self._sources = sources
+
+    def reload(self, config):
+        """Apply changed connection settings without a restart. Routes look
+        sources up per request, so swapping the dict is enough."""
+        old = self._sources.get("mqtt")
+        self._build(config)
+        if old:
+            old.stop()
 
     def describe(self):
         """Which sources exist and whether they're usable - for the widget

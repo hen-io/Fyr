@@ -90,6 +90,15 @@ class MqttSource(DataSource):
                 raise KeyError(f"No message received yet for MQTT topic '{key}'")
             return self._values[key]
 
+    def stop(self):
+        if self._client:
+            self._client.loop_stop()
+            try:
+                self._client.disconnect()
+            except Exception:
+                pass
+            self._client = None
+
     def check(self):
         detail = f"{self.host}:{self.port}"
         if self._connected:

@@ -15,14 +15,18 @@
         var root = document.documentElement;
         var pick = function (k) { return own[k] !== undefined ? own[k] : srv[k]; };
         if (pick("palette")) root.setAttribute("data-palette", pick("palette"));
+        if (srv.siteTitle) document.title = srv.siteTitle;
+        var mode = pick("colorMode") || "dark";
+        if (mode === "auto") mode = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        root.setAttribute("data-mode", mode);
         if (pick("bgEffect")) root.setAttribute("data-bg-effect", pick("bgEffect"));
         if (srv.tileOpacity !== undefined) root.style.setProperty("--tile-alpha", String(srv.tileOpacity / 100));
         if (srv.gridMargin !== undefined) root.style.setProperty("--grid-margin", srv.gridMargin + "px");
         if (srv.tileBlur !== undefined) root.style.setProperty("--tile-blur", srv.tileBlur + "px");
       } catch (e) {}
     </script>
-    <script type="module" crossorigin src="/assets/index-D_iVgDuD.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DOpSRhEL.css">
+    <script type="module" crossorigin src="/assets/index-A4v0Oqti.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-fNkpomsq.css">
   </head>
   <body>
     <div id="root"></div>

@@ -1,5 +1,6 @@
-import json
 import os
+
+from .fileio import load_json, save_json
 
 # Kept separate from users.json (which only ever holds credentials) so a
 # backup/restore of "who can log in" and "what they've customized" stay
@@ -12,18 +13,11 @@ def _prefs_path(config):
 
 
 def load_all_prefs(config):
-    path = _prefs_path(config)
-    if not os.path.exists(path):
-        return {}
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    return load_json(_prefs_path(config), {})
 
 
 def save_all_prefs(all_prefs, config):
-    path = _prefs_path(config)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(all_prefs, f, indent=2)
+    save_json(_prefs_path(config), all_prefs)
 
 
 def get_prefs(username, config):

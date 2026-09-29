@@ -1,4 +1,6 @@
 import fnmatch
+import threading
+import time
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
@@ -40,6 +42,13 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 _opener = urllib.request.build_opener(_NoRedirect)
 
+# Every tile asks about its own URL, all at once on page load and again every
+# minute per browser - a short cache means several browsers (or a refresh)
+# share one real request instead of hammering each app.
+_CACHE_TTL = 20
+_cache = {}
+_cache_lock = threading.Lock()
+
 
 @status_bp.route("/api/status")
 def check_status():
@@ -51,6 +60,12 @@ def check_status():
 
     if not _hostname_allowed(parsed.hostname, current_app.config["STATUS_ALLOWED_HOSTS"]):
         return jsonify({"status": "unknown", "error": "host_not_allowed"}), 403
+
+    now = time.time()
+    with _cache_lock:
+        hit = _cache.get(target)
+    if hit and now - hit[0] < _CACHE_TTL:
+        return jsonify({"status": hit[1]})
 
     try:
         req = urllib.request.Request(target, method="GET", headers={"User-Agent": "fyr-status-check"})
@@ -68,4 +83,9 @@ def check_status():
     except Exception:
         up = False
 
-    return jsonify({"status": "up" if up else "down"})
+    result = "up" if up else "down"
+    with _cache_lock:
+        if len(_cache) > 512:
+            _cache.clear()
+        _cache[target] = (now, result)
+    return jsonify({"status": result})

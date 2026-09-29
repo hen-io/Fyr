@@ -1,10 +1,10 @@
 import os
 import re
 
-import yaml
 from flask import Blueprint, current_app, jsonify, request, send_from_directory, session
 
 from ..auth import require_role
+from ..fileio import load_yaml, save_yaml
 
 config_bp = Blueprint("config", __name__)
 
@@ -74,16 +74,11 @@ def _nest_apps(flat_apps, existing_categories):
 
 
 def _load_yaml(path, default):
-    if not os.path.exists(path):
-        return default
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or default
+    return load_yaml(path, default)
 
 
 def _save_yaml(path, data):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+    save_yaml(path, data)
 
 
 _ICON_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.(png|jpe?g|webp|gif|ico|svg)$")

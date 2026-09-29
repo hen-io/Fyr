@@ -14,6 +14,7 @@ defaults_bp = Blueprint("defaults", __name__)
 # built-in default there).
 _ALLOWED = {
     "palette": str,
+    "colorMode": str,
     "bgEffect": str,
     "hoverEffect": str,
     "tilesPerRow": (str, int),
@@ -21,6 +22,7 @@ _ALLOWED = {
     "statusInterval": int,
     "loaderMode": str,
     "dockLabels": str,
+    "siteTitle": str,
     "narrowLauncherLast": str,
     "tileOpacity": int,
     "tileBlur": int,

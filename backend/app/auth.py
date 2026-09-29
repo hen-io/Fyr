@@ -1,10 +1,11 @@
-import json
 import os
 import re
 from functools import wraps
 
 from flask import current_app, jsonify, session
 from werkzeug.security import check_password_hash, generate_password_hash
+
+from .fileio import load_json, save_json
 
 VALID_ROLES = ("visitor", "admin")
 
@@ -24,18 +25,11 @@ def _users_path(config=None):
 
 
 def load_users(config=None):
-    path = _users_path(config)
-    if not os.path.exists(path):
-        return {}
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    return load_json(_users_path(config), {})
 
 
 def save_users(users, config=None):
-    path = _users_path(config)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(users, f, indent=2)
+    save_json(_users_path(config), users)
 
 
 def change_password(username, new_password, config=None):

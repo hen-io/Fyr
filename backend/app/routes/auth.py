@@ -131,6 +131,10 @@ def update_my_profile():
 @require_role()
 def upload_my_avatar():
     username = session["username"]
+    if not USERNAME_RE.match(username):
+        # Accounts created before usernames were restricted: never build a
+        # file path from a name that could contain separators.
+        return jsonify({"error": "avatar_unavailable"}), 400
     file = request.files.get("file")
     if not file:
         return jsonify({"error": "no_file"}), 400
@@ -169,6 +173,8 @@ def upload_my_avatar():
 @require_role()
 def delete_my_avatar():
     username = session["username"]
+    if not USERNAME_RE.match(username):
+        return jsonify({"error": "avatar_unavailable"}), 400
     users = load_users(current_app.config)
     ext = users.get(username, {}).get("avatar_ext")
     if ext:

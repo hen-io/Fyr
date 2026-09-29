@@ -17,7 +17,37 @@ class MqttSource(DataSource):
     widgets) - it starts filling from the moment a topic is first asked
     for, and is lost on restart, unlike Home Assistant's own recorder."""
 
-    name = "mqtt"
+    id = "mqtt"
+    label = "MQTT"
+    icon = "access-point-network"
+    description = "Sensorer og styring via en MQTT-megler."
+    FIELDS = [
+        {"name": "host", "label": "Vert", "kind": "text", "placeholder": "192.168.1.10"},
+        {"name": "port", "label": "Port", "kind": "number", "default": 1883, "min": 1, "max": 65535},
+        {"name": "user", "label": "Brukernavn (valgfritt)", "kind": "text"},
+        {"name": "password", "label": "Passord (valgfritt)", "kind": "password"},
+    ]
+
+    @classmethod
+    def env_defaults(cls, config):
+        return {
+            "enabled": bool(config["MQTT_ENABLED"]),
+            "host": config["MQTT_HOST"],
+            "port": config["MQTT_PORT"],
+            "user": config["MQTT_USER"] or "",
+            "password": config["MQTT_PASS"] or "",
+        }
+
+    @classmethod
+    def from_values(cls, values, config):
+        source = cls(values.get("host") or "", int(values.get("port") or 1883), values.get("user") or None, values.get("password") or None)
+        if source.host:
+            source.start()
+        return source
+
+    def is_configured(self):
+        return bool(self.host)
+
     HISTORY_LEN = 400
     HISTORY_MIN_GAP = 5  # seconds - a chatty topic must not evict useful history
 
@@ -107,7 +137,7 @@ class MqttSource(DataSource):
         detail = f"{self.host}:{self.port}"
         if self._connected:
             return {"connected": True, "detail": detail, "latency_ms": None}
-        return {"connected": False, "detail": f"Ingen forbindelse til {detail}", "latency_ms": None}
+        return {"connected": False, "detail": detail, "latency_ms": None}
 
     def list_keys(self):
         # Only topics something has already asked for (and heard back on) are

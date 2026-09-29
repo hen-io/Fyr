@@ -23,6 +23,7 @@ _ALLOWED = {
     "loaderMode": str,
     "dockLabels": str,
     "siteTitle": str,
+    "language": str,
     "narrowLauncherLast": str,
     "tileOpacity": int,
     "tileBlur": int,

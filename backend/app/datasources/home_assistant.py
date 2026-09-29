@@ -1,10 +1,9 @@
 import json
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from datetime import datetime, timedelta, timezone
 
+from . import http
 from .base import DataSource
 
 
@@ -16,7 +15,23 @@ class HomeAssistantSource(DataSource):
     that need fresher data than the default window (dashboard widgets poll
     every few seconds) pass a smaller max_age."""
 
-    name = "home_assistant"
+    id = "home_assistant"
+    label = "Home Assistant"
+    icon = "home-assistant"
+    description = "Sensorer, brytere og tjenester fra Home Assistant."
+    default_enabled = True
+    FIELDS = [
+        {"name": "url", "label": "Adresse", "kind": "url", "placeholder": "http://homeassistant.local:8123"},
+        {"name": "token", "label": "Tilgangstoken (long-lived)", "kind": "password"},
+    ]
+
+    @classmethod
+    def env_defaults(cls, config):
+        return {"url": config["HA_URL"], "token": config["HA_TOKEN"]}
+
+    @classmethod
+    def from_values(cls, values, config):
+        return cls((values.get("url") or "").rstrip("/"), values.get("token") or "", cache_ttl=config["WEATHER_CACHE_TTL"])
 
     def __init__(self, url, token, cache_ttl=300, timeout=8):
         self.url = url
@@ -31,15 +46,10 @@ class HomeAssistantSource(DataSource):
 
     def _request(self, path, data=None):
         self._require_configured()
-        headers = {"Authorization": f"Bearer {self.token}"}
-        body = None
-        if data is not None:
-            headers["Content-Type"] = "application/json"
-            body = json.dumps(data).encode("utf-8")
-        req = urllib.request.Request(f"{self.url}{path}", data=body, headers=headers)
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            raw = resp.read().decode("utf-8")
-        return json.loads(raw) if raw else None
+        _status, _headers, raw = http.request(
+            f"{self.url}{path}", headers={"Authorization": f"Bearer {self.token}"}, data=data, timeout=self.timeout
+        )
+        return json.loads(raw.decode("utf-8")) if raw else None
 
     def is_configured(self):
         return bool(self.url and self.token)
@@ -50,8 +60,8 @@ class HomeAssistantSource(DataSource):
         started = time.time()
         try:
             body = self._request("/api/config") or {}
-        except urllib.error.HTTPError as err:
-            detail = "Ugyldig token" if err.code == 401 else f"HTTP {err.code}"
+        except http.HttpError as err:
+            detail = "Ugyldig token" if err.status == 401 else f"HTTP {err.status}"
             return {"connected": False, "detail": detail, "latency_ms": None}
         except Exception as err:
             return {"connected": False, "detail": str(getattr(err, "reason", err))[:120], "latency_ms": None}

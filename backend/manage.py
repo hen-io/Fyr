@@ -41,7 +41,11 @@ def adduser():
         print("Passwords did not match.")
         return 1
 
-    create_user(username, password, role, _CONFIG)
+    try:
+        create_user(username, password, role, _CONFIG)
+    except ValueError as err:
+        print(f"Could not create the user: {err}")
+        return 1
     print(f"User '{username}' created with role '{role}'.")
     return 0
 

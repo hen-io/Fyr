@@ -50,6 +50,16 @@ def system_info():
     )
 
 
+def _supervised_by_supervisord():
+    """Only signal PID 1 when it really is the container's supervisord - on a
+    developer machine PID 1 is init/systemd and must never be terminated."""
+    try:
+        with open("/proc/1/comm", encoding="utf-8") as f:
+            return "supervisord" in f.read()
+    except OSError:
+        return False
+
+
 def _restart_after(delay_seconds):
     time.sleep(delay_seconds)
     # Signals PID 1 (supervisord) rather than anything Docker-API-based -
@@ -62,6 +72,8 @@ def _restart_after(delay_seconds):
 @system_bp.route("/api/system/restart", methods=["POST"])
 @require_role("admin")
 def restart_container():
+    if not _supervised_by_supervisord():
+        return jsonify({"error": "not_in_container"}), 501
     # Delayed on a background thread so this response actually reaches the
     # browser before the container starts going down.
     threading.Thread(target=_restart_after, args=(1,), daemon=True).start()

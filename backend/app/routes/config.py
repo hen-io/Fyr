@@ -33,6 +33,8 @@ def _flatten_apps(data):
     for category, cat_data in (data.get("categories") or {}).items():
         apps = (cat_data or {}).get("apps") or [] if isinstance(cat_data, dict) else (cat_data or [])
         for app in apps:
+            if not isinstance(app, dict):
+                continue  # hand-edited file: skip junk rather than 500 for everyone
             entry = dict(app)
             if category != _UNCATEGORIZED:
                 entry["category"] = category

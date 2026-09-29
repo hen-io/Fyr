@@ -1,6 +1,8 @@
 import json
 import math
 import re
+import threading
+import time
 import uuid
 
 from flask import Blueprint, current_app, jsonify, request
@@ -281,6 +283,94 @@ def list_source_keys(name):
     except Exception:
         keys = []
     return jsonify({"keys": keys})
+
+
+# --- integration widgets (Sonarr / Radarr / qBittorrent ...) -----------------
+
+INTEGRATION_WIDGETS = {"arr_calendar", "arr_queue", "qbit_torrents"}
+_INTEGRATION_TTL = 5
+_integration_cache = {}
+_integration_lock = threading.Lock()
+
+
+def _integration_source(widget):
+    """The live integration serving this widget, or (None, error response)."""
+    if widget.get("type") not in INTEGRATION_WIDGETS:
+        return None, (jsonify({"error": "not_found"}), 404)
+    try:
+        source = current_app.datasources.get(widget.get("source"))
+    except KeyError:
+        return None, (jsonify({"error": "integration_disabled"}), 404)
+    if widget["type"] not in source.WIDGETS:
+        return None, (jsonify({"error": "not_found"}), 404)
+    return source, None
+
+
+def _integration_payload(source, widget, cache_key=None):
+    now = time.time()
+    if cache_key:
+        with _integration_lock:
+            hit = _integration_cache.get(cache_key)
+        if hit and now - hit[0] < _INTEGRATION_TTL:
+            return hit[1]
+    data = source.widget_data(widget["type"], widget)
+    if cache_key:
+        with _integration_lock:
+            if len(_integration_cache) > 256:
+                _integration_cache.clear()
+            _integration_cache[cache_key] = (now, data)
+    return data
+
+
+@widgets_bp.route("/api/widget/<widget_id>/integration")
+def get_widget_integration(widget_id):
+    widget = _find_widget(widget_id)
+    if widget is None:
+        return jsonify({"error": "not_found"}), 404
+    source, error = _integration_source(widget)
+    if error:
+        return error
+    try:
+        return jsonify(_integration_payload(source, widget, cache_key=(widget_id, json.dumps(widget, sort_keys=True, default=str))))
+    except Exception:
+        return jsonify({"error": "unavailable"}), 502
+
+
+@widgets_bp.route("/api/widget/<widget_id>/integration-action", methods=["POST"])
+def run_widget_integration_action(widget_id):
+    widget = _find_widget(widget_id)
+    if widget is None:
+        return jsonify({"error": "not_found"}), 404
+    source, error = _integration_source(widget)
+    if error:
+        return error
+    # Same rule as button widgets: acting on the real world needs a login.
+    if not widget.get("allow_anonymous") and current_user(current_app.config) is None:
+        return jsonify({"error": "not_authenticated"}), 401
+    action = (request.get_json(silent=True) or {}).get("action")
+    if action not in source.ACTIONS:
+        return jsonify({"error": "invalid_action"}), 400
+    try:
+        source.run_widget_action(action, widget)
+    except Exception:
+        return jsonify({"error": "action_failed"}), 502
+    return jsonify({"ok": True})
+
+
+@widgets_bp.route("/api/integration-preview", methods=["POST"])
+@require_role("admin")
+def preview_integration_widget():
+    """The editor's live preview of an unsaved integration widget."""
+    widget = request.get_json(silent=True)
+    if not isinstance(widget, dict):
+        return jsonify({"error": "invalid_body"}), 400
+    source, error = _integration_source(widget)
+    if error:
+        return error
+    try:
+        return jsonify(_integration_payload(source, widget))
+    except Exception:
+        return jsonify({"error": "unavailable"}), 502
 
 
 @widgets_bp.route("/api/widget-data", methods=["POST"])

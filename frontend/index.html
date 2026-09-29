@@ -16,6 +16,7 @@
         var pick = function (k) { return own[k] !== undefined ? own[k] : srv[k]; };
         if (pick("palette")) root.setAttribute("data-palette", pick("palette"));
         if (srv.siteTitle) document.title = srv.siteTitle;
+        if (pick("language")) root.setAttribute("lang", pick("language"));
         var mode = pick("colorMode") || "dark";
         if (mode === "auto") mode = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
         root.setAttribute("data-mode", mode);
@@ -26,8 +27,8 @@
         if (srv.tileBlur !== undefined) root.style.setProperty("--tile-blur", srv.tileBlur + "px");
       } catch (e) {}
     </script>
-    <script type="module" crossorigin src="/assets/index-CRzLF75M.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DiriMCwf.css">
+    <script type="module" crossorigin src="/assets/index-gi87b1Dz.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-C70YIoEm.css">
   </head>
   <body>
     <div id="root"></div>

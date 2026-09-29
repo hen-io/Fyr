@@ -63,7 +63,10 @@ def put_widgets():
         return jsonify({"error": "invalid_body"}), 400
     path = _layout_path(current_app.config)
     existing = _load_yaml(path, {})
-    existing["widgets"] = body["widgets"]
+    # Normalized here too, not just on GET (_dashboard) - otherwise a
+    # malformed x/y/w/h lands in ui.conf as-is and only gets sanitized
+    # cosmetically the next time it's read, not actually fixed on disk.
+    existing["widgets"] = [_normalize_geometry(w) for w in body["widgets"]]
     if isinstance(body.get("grid"), dict):
         existing["grid"] = body["grid"]
     _save_yaml(path, existing)

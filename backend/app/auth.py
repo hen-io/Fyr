@@ -69,16 +69,40 @@ def verify_login(username, password, config=None):
     return user["role"]
 
 
+def current_user(config=None):
+    """The logged-in session's user, re-checked against users.json on
+    every call rather than trusting session["role"] as set at login. A
+    session's role is otherwise just a stale snapshot from whenever they
+    last logged in - without this, an admin demoted (or deleted) via the
+    Admin Panel keeps their old privileges on every request until their
+    cookie naturally expires (up to 30 days by default) or they happen to
+    log out, which defeats the entire point of server-side sessions being
+    revocable in the first place. Returns None if not logged in, or if the
+    account no longer exists - clearing the session in that second case,
+    since there's nothing left for it to legitimately refer to."""
+    if "username" not in session:
+        return None
+    username = session["username"]
+    users = load_users(config)
+    user = users.get(username)
+    if not user:
+        session.clear()
+        return None
+    return {"username": username, "role": user.get("role")}
+
+
 def require_role(*roles):
-    """Route decorator: 401 if not logged in, 403 if logged in but not one
-    of `roles`. @require_role() with no args just means "any logged-in user"."""
+    """Route decorator: 401 if not logged in (or no longer a real
+    account), 403 if logged in but not one of `roles`. @require_role()
+    with no args just means "any logged-in user"."""
 
     def decorator(fn):
         @wraps(fn)
         def wrapped(*args, **kwargs):
-            if "username" not in session:
+            user = current_user()
+            if not user:
                 return jsonify({"error": "not_authenticated"}), 401
-            if roles and session.get("role") not in roles:
+            if roles and user["role"] not in roles:
                 return jsonify({"error": "forbidden"}), 403
             return fn(*args, **kwargs)
 

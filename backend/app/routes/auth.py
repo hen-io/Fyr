@@ -1,6 +1,6 @@
 from flask import Blueprint, current_app, jsonify, request, session
 
-from ..auth import change_password, require_role, verify_login
+from ..auth import change_password, current_user, require_role, verify_login
 from ..prefs import get_prefs, set_prefs
 from ..ratelimit import is_locked_out, record_failure, record_success
 
@@ -39,9 +39,14 @@ def logout():
 
 @auth_bp.route("/api/me")
 def me():
-    if "username" not in session:
+    # Live-checked (current_user), not session["role"] directly - the
+    # frontend polls this to decide what to show (admin-only buttons,
+    # etc.), so a demoted/deleted account needs to see that reflected
+    # here too, not just have the backend separately reject the actions.
+    user = current_user(current_app.config)
+    if not user:
         return jsonify({"error": "not_authenticated"}), 401
-    return jsonify({"username": session["username"], "role": session["role"]})
+    return jsonify(user)
 
 
 @auth_bp.route("/api/me/prefs", methods=["GET"])

@@ -217,6 +217,19 @@ def put_widgets():
     return jsonify({"ok": True})
 
 
+@widgets_bp.route("/api/widgets/reset", methods=["POST"])
+@require_role("admin")
+def reset_widgets():
+    """Back to an empty dashboard with the default grid (widgets are only
+    dashboard content - apps, users and settings are untouched)."""
+    path = _layout_path(current_app.config)
+    existing = _load_yaml(path, {})
+    existing["grid"] = dict(DEFAULT_GRID)
+    existing["widgets"] = []
+    _save_yaml(path, existing)
+    return jsonify({"ok": True})
+
+
 @widgets_bp.route("/api/widget/<widget_id>")
 def get_widget_data(widget_id):
     widget = _find_widget(widget_id)

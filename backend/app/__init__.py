@@ -69,12 +69,27 @@ def create_app():
     def reject_cross_origin_writes():
         if request.method in ("GET", "HEAD", "OPTIONS"):
             return None
+        # Browsers state the request's provenance themselves and it is not
+        # affected by whatever Host header a reverse proxy passes on, so it
+        # is the primary signal. Only an explicit cross-site request is
+        # refused.
+        site = request.headers.get("Sec-Fetch-Site")
+        if site:
+            if site == "cross-site":
+                return jsonify({"error": "cross_origin_blocked"}), 403
+            return None
+        # Older browsers / non-browser clients: fall back to comparing the
+        # Origin against every host name this request was addressed to.
         origin = request.headers.get("Origin")
         if not origin:
             return None
         origin_host = (urlparse(origin).hostname or "").lower()
-        own_host = (request.host.split(":")[0] if not request.host.startswith("[") else request.host).lower()
-        if origin_host != own_host:
+        own = {request.host.split(":")[0].lower()}
+        for header in ("X-Forwarded-Host", "X-Original-Host"):
+            for value in (request.headers.get(header) or "").split(","):
+                if value.strip():
+                    own.add(value.strip().split(":")[0].lower())
+        if origin_host not in own:
             return jsonify({"error": "cross_origin_blocked"}), 403
         return None
 

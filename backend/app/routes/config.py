@@ -60,7 +60,7 @@ def _nest_apps(flat_apps, existing_categories):
     not silently drop them)."""
     categories = {}
     for app in flat_apps:
-        entry = dict(app)
+        entry = {k: v for k, v in dict(app).items() if v is not None}
         category = entry.pop("category", None) or _UNCATEGORIZED
         categories.setdefault(category, []).append(entry)
     result = {}

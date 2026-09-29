@@ -20,6 +20,7 @@ _ALLOWED = {
     "gap": int,
     "statusInterval": int,
     "loaderMode": str,
+    "dockLabels": str,
     "fullscreenMargin": int,
 }
 

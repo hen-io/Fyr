@@ -83,6 +83,29 @@ def _clean_widgets(raw, columns):
     return cleaned
 
 
+def _seed_footer(data, cfg):
+    """The footer used to show a fixed clock plus home-mode / indoor
+    temperature / weather chips. They are ordinary widgets now (editable,
+    movable, removable); the first time a dashboard is read, the ones that
+    were showing are created so nothing disappears. `zones_seeded` makes
+    this happen exactly once - deleting them afterwards sticks."""
+    if data.get("zones_seeded"):
+        return False
+    widgets = list(data.get("widgets") or [])
+    seeded = []
+    if cfg.get("HA_HOME_MODE_ENTITY"):
+        seeded.append({"id": "footer-homemode", "type": "homemode", "w": 2})
+    if cfg.get("HA_INDOOR_TEMP_ENTITY"):
+        seeded.append({"id": "footer-indoortemp", "type": "indoortemp", "w": 1})
+    seeded.append({"id": "footer-weather", "type": "weather", "w": 1})
+    seeded.append({"id": "footer-clock", "type": "clock", "w": 2, "show_date": False, "font_scale": 1.6, "bare": True})
+    for i, item in enumerate(seeded):
+        widgets.append({"x": i, "y": 0, "h": 1, "zone": "footer", **item})
+    data["widgets"] = widgets
+    data["zones_seeded"] = True
+    return True
+
+
 def _dashboard(cfg):
     """A small grid of widgets (ui.conf: "grid" for its dimensions,
     "widgets" for what's placed in it and where) shown ABOVE the app
@@ -92,6 +115,11 @@ def _dashboard(cfg):
     happened to be positioned below it). The launcher is a separate,
     naturally-sized section the frontend always renders after this grid."""
     data = _load_yaml(_layout_path(cfg), {})
+    if _seed_footer(data, cfg):
+        try:
+            _save_yaml(_layout_path(cfg), data)
+        except OSError:
+            pass
     grid = _clean_grid(None, data.get("grid"))
     widgets = [_normalize_geometry(w) for w in (data.get("widgets") or []) if isinstance(w, dict)]
     return grid, widgets
@@ -226,6 +254,7 @@ def reset_widgets():
     existing = _load_yaml(path, {})
     existing["grid"] = dict(DEFAULT_GRID)
     existing["widgets"] = []
+    existing["zones_seeded"] = True
     _save_yaml(path, existing)
     return jsonify({"ok": True})
 
@@ -265,15 +294,67 @@ def preview_widget_data():
     return jsonify(_collect(widget))
 
 
+_WEATHER_ID = re.compile(r"^weather\.[a-z0-9_]+$")
+
+
+@widgets_bp.route("/api/widget/<widget_id>/weather")
+def get_widget_weather(widget_id):
+    """Current conditions for a weather widget: the weather.* entity chosen
+    in the widget (else HA_WEATHER_ENTITY), plus a short daily forecast when
+    the entity still exposes one as an attribute."""
+    from .legacy import CONDITION_ICONS
+
+    widget = _find_widget(widget_id)
+    if widget is None or widget.get("type") != "weather":
+        return jsonify({"error": "not_found"}), 404
+    entity = widget.get("key") or current_app.config["HA_WEATHER_ENTITY"]
+    if not isinstance(entity, str) or not _WEATHER_ID.match(entity):
+        return jsonify({"error": "invalid_entity"}), 400
+    try:
+        payload = current_app.datasources.get("home_assistant").get_value(entity, max_age=WIDGET_MAX_AGE * 4)
+    except Exception:
+        return jsonify({"error": "weather_unavailable"}), 502
+
+    attrs = payload.get("attributes") or {}
+    condition = payload.get("state", "unknown")
+    forecast = []
+    for day in (attrs.get("forecast") or [])[:5]:
+        if isinstance(day, dict):
+            forecast.append(
+                {
+                    "datetime": day.get("datetime"),
+                    "condition": day.get("condition"),
+                    "icon": CONDITION_ICONS.get(day.get("condition"), "🌡️"),
+                    "temperature": day.get("temperature"),
+                    "templow": day.get("templow"),
+                }
+            )
+    return jsonify(
+        {
+            "condition": condition,
+            "icon": CONDITION_ICONS.get(condition, "🌡️"),
+            "temperature": attrs.get("temperature"),
+            "temperature_unit": attrs.get("temperature_unit", "°C"),
+            "apparent_temperature": attrs.get("apparent_temperature"),
+            "humidity": attrs.get("humidity"),
+            "wind_speed": attrs.get("wind_speed"),
+            "wind_speed_unit": attrs.get("wind_speed_unit"),
+            "pressure": attrs.get("pressure"),
+            "pressure_unit": attrs.get("pressure_unit"),
+            "forecast": forecast,
+        }
+    )
+
+
 @widgets_bp.route("/api/widget/<widget_id>/history")
 def get_widget_history(widget_id):
     widget = _find_widget(widget_id)
     if widget is None or not widget.get("key") or not widget.get("source"):
         return jsonify({"error": "not_found"}), 404
     try:
-        hours = min(168, max(1, int(request.args.get("hours", widget.get("hours") or 24))))
+        hours = min(168.0, max(0.05, float(request.args.get("hours", widget.get("hours") or 24))))
     except ValueError:
-        hours = 24
+        hours = 24.0
 
     try:
         source = current_app.datasources.get(widget["source"])

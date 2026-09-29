@@ -9,6 +9,7 @@ import time
 from flask import Blueprint, current_app, jsonify
 
 from ..auth import require_role
+from ..meta import load_meta
 
 system_bp = Blueprint("system", __name__)
 
@@ -18,21 +19,21 @@ system_bp = Blueprint("system", __name__)
 _START_TIME = time.time()
 
 
-def _app_metadata():
-    # /app/package.json is a copy kept specifically for this (see
-    # Dockerfile/entrypoint.sh's startup banner) - not the one nginx
-    # serves, which gets deleted at build time.
-    try:
-        with open("/app/package.json", encoding="utf-8") as f:
-            data = json.load(f)
-        return {
-            "name": data.get("name"),
-            "version": data.get("version"),
-            "author": data.get("author"),
-            "homepage": data.get("homepage"),
-        }
-    except Exception:
-        return {}
+def _public_meta():
+    meta = load_meta()
+    return {
+        "name": meta.get("name"),
+        "author": meta.get("author"),
+        "homepage": meta.get("homepage"),
+        "version": meta.get("version"),
+        "frontend_version": meta.get("frontend_version"),
+        "backend_version": meta.get("backend_version"),
+    }
+
+
+@system_bp.route("/api/about")
+def about():
+    return jsonify(_public_meta())
 
 
 @system_bp.route("/api/system/info")
@@ -40,7 +41,7 @@ def _app_metadata():
 def system_info():
     return jsonify(
         {
-            **_app_metadata(),
+            **_public_meta(),
             "uptime_seconds": int(time.time() - _START_TIME),
             "python_version": platform.python_version(),
             "platform": sys.platform,

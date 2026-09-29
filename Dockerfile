@@ -17,12 +17,10 @@ COPY backend/app/ ./app/
 COPY backend/manage.py backend/wsgi.py ./
 
 COPY frontend/ /usr/share/nginx/html/
-# package.json rides along in frontend/ purely as version metadata for the
-# publish workflow to read - not something nginx should actually serve. A
-# copy lives at /app/package.json instead, for entrypoint.sh's startup
-# banner to read.
-COPY frontend/package.json /app/package.json
+# A leftover package.json from the frontend build is not something nginx
+# should serve. Name, author and versions live in app.meta.json instead.
 RUN rm -f /usr/share/nginx/html/package.json
+COPY app.meta.json /app/app.meta.json
 
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/supervisord.conf /etc/supervisord.conf

@@ -1,4 +1,5 @@
 import os
+import re
 
 import yaml
 from flask import Blueprint, current_app, jsonify, request, send_from_directory, session
@@ -48,7 +49,7 @@ def _category_meta(data):
             continue
         icon = cat_data.get("icon")
         description = cat_data.get("description")
-        if icon or description:
+        if icon or description or not cat_data.get("apps"):
             meta[category] = {"icon": icon, "description": description}
     return meta
 
@@ -83,6 +84,49 @@ def _save_yaml(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+
+
+_ICON_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.(png|jpe?g|webp|gif|ico|svg)$")
+_APP_KEYS = ("title", "url", "internalUrl", "icon", "category", "visibility", "default_mode")
+
+
+def _clean_apps(raw):
+    """Apps arrive from the admin UI: keep only known keys, bound their
+    lengths, require http(s) URLs and a plain icon file name, and reject
+    duplicate titles (the layout is keyed by title). Returns (apps, error)."""
+    cleaned, seen = [], set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        app = {}
+        for key in _APP_KEYS:
+            value = item.get(key)
+            if value is None or value == "":
+                continue
+            if not isinstance(value, str) or len(value) > 500:
+                return None, "invalid_app"
+            app[key] = value.strip()
+        title = app.get("title", "")
+        if not title or len(title) > 80:
+            return None, "invalid_title"
+        if title in seen:
+            return None, "duplicate_title"
+        seen.add(title)
+        for key in ("url", "internalUrl"):
+            if key in app and not re.match(r"^https?://[^\s/]+", app[key]):
+                return None, "invalid_url"
+        if "url" not in app:
+            return None, "invalid_url"
+        if "icon" in app and not _ICON_NAME.match(app["icon"]):
+            return None, "invalid_icon"
+        if app.get("default_mode") not in (None, "window", "tab"):
+            return None, "invalid_mode"
+        if app.get("visibility") not in (None, "authenticated"):
+            return None, "invalid_visibility"
+        if "category" in app and (len(app["category"]) > 60 or app["category"] == _UNCATEGORIZED):
+            return None, "invalid_category"
+        cleaned.append(app)
+    return cleaned, None
 
 
 @config_bp.route("/api/apps", methods=["GET"])
@@ -126,10 +170,22 @@ def put_apps():
         current["description"] = meta.get("description")
         existing_categories[name] = current
 
-    data = {
-        "default_mode": body.get("default_mode"),
-        "categories": _nest_apps(body["apps"], existing_categories),
-    }
+    apps, error = _clean_apps(body["apps"])
+    if error:
+        return jsonify({"error": error}), 400
+    default_mode = body.get("default_mode")
+    if default_mode not in (None, "window", "tab"):
+        return jsonify({"error": "invalid_mode"}), 400
+
+    categories = _nest_apps(apps, existing_categories)
+    # Categories named in the request but holding no apps are kept (that is
+    # how an empty category gets created); ones not named and with no apps
+    # simply disappear (that is how one is deleted).
+    for name in overrides:
+        if name != _UNCATEGORIZED and name not in categories:
+            meta = overrides[name] if isinstance(overrides[name], dict) else {}
+            categories[name] = {"icon": meta.get("icon"), "description": meta.get("description"), "apps": []}
+    data = {"default_mode": default_mode, "categories": categories}
     _save_yaml(_apps_path(current_app.config), data)
     return jsonify({"ok": True})
 
@@ -167,4 +223,51 @@ def put_layout():
 @config_bp.route("/icons/<path:filename>")
 def serve_icon(filename):
     icons_dir = os.path.join(current_app.config["CONFIG_DIR"], "icons")
-    return send_from_directory(icons_dir, filename)
+    response = send_from_directory(icons_dir, filename)
+    # Icons are images; if one is ever opened as a page it must not run
+    # anything (an SVG could carry script).
+    response.headers["Content-Security-Policy"] = "sandbox; default-src 'none'; img-src 'self'"
+    return response
+
+
+@config_bp.route("/api/icons", methods=["GET"])
+@require_role("admin")
+def list_icons():
+    icons_dir = os.path.join(current_app.config["CONFIG_DIR"], "icons")
+    try:
+        names = sorted(n for n in os.listdir(icons_dir) if _ICON_NAME.match(n))
+    except OSError:
+        names = []
+    return jsonify(names)
+
+
+@config_bp.route("/api/icons", methods=["POST"])
+@require_role("admin")
+def upload_icon():
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"error": "no_file"}), 400
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.basename(file.filename)).lstrip(".")
+    # SVG is allowed for icons already on disk, but not uploaded: it can carry script.
+    if not _ICON_NAME.match(name) or name.lower().endswith(".svg"):
+        return jsonify({"error": "unsupported_type"}), 400
+    data = file.read(1024 * 1024 + 1)
+    if len(data) > 1024 * 1024:
+        return jsonify({"error": "file_too_large"}), 400
+    # Check the bytes really are the image type the extension claims.
+    signatures = {
+        "png": (b"\x89PNG",),
+        "jpg": (b"\xff\xd8",),
+        "jpeg": (b"\xff\xd8",),
+        "gif": (b"GIF8",),
+        "webp": (b"RIFF",),
+        "ico": (b"\x00\x00\x01\x00",),
+    }
+    ext = name.rsplit(".", 1)[1].lower()
+    if not data.startswith(signatures[ext]):
+        return jsonify({"error": "not_an_image"}), 400
+    icons_dir = os.path.join(current_app.config["CONFIG_DIR"], "icons")
+    os.makedirs(icons_dir, exist_ok=True)
+    with open(os.path.join(icons_dir, name), "wb") as f:
+        f.write(data)
+    return jsonify({"name": name}), 201

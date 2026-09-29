@@ -8,6 +8,7 @@ from .datasources.registry import DataSourceRegistry
 from .routes.auth import auth_bp
 from .routes.calendar import calendar_bp
 from .routes.config import config_bp
+from .routes.defaults import defaults_bp
 from .routes.legacy import legacy_bp
 from .routes.status import status_bp
 from .routes.system import system_bp
@@ -18,6 +19,15 @@ from .routes.widgets import widgets_bp
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+
+    # Without this, Werkzeug buffers an incoming request body fully before
+    # any route-level size check (e.g. PUT /api/me/avatar's own 2MB cap)
+    # ever runs - a client sending an arbitrarily large body would be
+    # accepted and held in memory regardless of what a route later
+    # decides to do with it. Comfortably above the avatar upload's own
+    # limit (multipart framing adds a little overhead), small enough that
+    # nothing legitimate on this API needs more.
+    app.config["MAX_CONTENT_LENGTH"] = 4 * 1024 * 1024
 
     if not app.config["SECRET_KEY"]:
         raise RuntimeError(
@@ -38,6 +48,7 @@ def create_app():
     app.register_blueprint(auth_bp)
     app.register_blueprint(status_bp)
     app.register_blueprint(config_bp)
+    app.register_blueprint(defaults_bp)
     app.register_blueprint(widgets_bp)
     app.register_blueprint(calendar_bp)
     app.register_blueprint(system_bp)
@@ -48,5 +59,20 @@ def create_app():
     @app.errorhandler(404)
     def not_found(_e):
         return jsonify({"error": "not_found"}), 404
+
+    @app.errorhandler(413)
+    def too_large(_e):
+        return jsonify({"error": "request_too_large"}), 413
+
+    # Applies to every response, including the two file-serving routes
+    # (icons, avatars) - stops a browser from ever executing an upload as
+    # something other than the content-type it was actually served as,
+    # regardless of what bytes it contains. Cheap, no downside for a JSON
+    # API + static files, worth having even though today's upload
+    # validation (mimetype allowlist) already covers the realistic risk.
+    @app.after_request
+    def add_security_headers(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
 
     return app

@@ -18,6 +18,15 @@ class DataSourceRegistry:
             mqtt_source.start()
             self._sources["mqtt"] = mqtt_source
 
+    def describe(self):
+        """Which sources exist and whether they're usable - for the widget
+        editor to warn ("MQTT is not enabled") instead of letting an admin
+        build a widget that can never show anything."""
+        return {
+            name: {"enabled": name in self._sources, "configured": name in self._sources and self._sources[name].is_configured()}
+            for name in ("home_assistant", "mqtt")
+        }
+
     def get(self, name):
         source = self._sources.get(name)
         if not source:

@@ -88,7 +88,12 @@ def current_user(config=None):
     if not user:
         session.clear()
         return None
-    return {"username": username, "role": user.get("role")}
+    return {
+        "username": username,
+        "role": user.get("role"),
+        "display_name": user.get("display_name"),
+        "has_avatar": bool(user.get("avatar_ext")),
+    }
 
 
 def require_role(*roles):

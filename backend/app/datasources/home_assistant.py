@@ -114,4 +114,5 @@ class HomeAssistantSource(DataSource):
 
     def list_calendar_events(self, entity_id, start_iso, end_iso):
         """HA calendars: GET /api/calendars/<entity_id>?start=<ISO8601>&end=<ISO8601>."""
-        return self._request(f"/api/calendars/{entity_id}?start={start_iso}&end={end_iso}")
+        query = urllib.parse.urlencode({"start": start_iso, "end": end_iso})
+        return self._request(f"/api/calendars/{urllib.parse.quote(entity_id, safe='._')}?{query}")

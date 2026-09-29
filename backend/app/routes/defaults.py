@@ -21,8 +21,10 @@ _ALLOWED = {
     "statusInterval": int,
     "loaderMode": str,
     "dockLabels": str,
+    "narrowLauncherLast": str,
     "tileOpacity": int,
     "tileBlur": int,
+    "gridMargin": int,
     "fullscreenMargin": int,
 }
 

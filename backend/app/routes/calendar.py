@@ -10,7 +10,9 @@ calendar_bp = Blueprint("calendar", __name__)
 
 
 def _iso(dt):
-    return dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+    # HA wants an ISO 8601 timestamp; a bare "+0000" offset would also turn
+    # into a space in a query string, so use "Z".
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _flatten(point):

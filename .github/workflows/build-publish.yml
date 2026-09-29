@@ -8,6 +8,7 @@ on:
       - "frontend/**"
       - "docker/**"
       - "Dockerfile"
+      - "app.meta.json"
       - ".github/workflows/build-publish.yml"
   workflow_dispatch: {}
 
@@ -32,7 +33,10 @@ jobs:
 
       - name: Read app version
         id: version
-        run: echo "value=$(jq -r .version frontend/package.json)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "value=$(jq -r .version app.meta.json)" >> "$GITHUB_OUTPUT"
+          echo "frontend=$(jq -r .frontend_version app.meta.json)" >> "$GITHUB_OUTPUT"
+          echo "backend=$(jq -r .backend_version app.meta.json)" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -43,3 +47,8 @@ jobs:
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.IMAGE_NAME }}:v${{ steps.version.outputs.value }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.value }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            fyr.frontend-version=${{ steps.version.outputs.frontend }}
+            fyr.backend-version=${{ steps.version.outputs.backend }}

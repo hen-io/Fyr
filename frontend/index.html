@@ -5,10 +5,26 @@
     <link rel="icon" type="image/svg+xml" href="/rocket-logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fyr</title>
-    <script type="module" crossorigin src="/assets/index-DvkHj4w0.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-wtBpj4HU.css">
+    <script>
+      // Apply the theme before the app bundle loads, from what this browser
+      // last saw (own choice > server default), so there is no flash of the
+      // built-in defaults.
+      try {
+        var own = JSON.parse(localStorage.getItem("fyr-settings") || "{}") || {};
+        var srv = JSON.parse(localStorage.getItem("fyr-server-defaults") || "{}") || {};
+        var root = document.documentElement;
+        var pick = function (k) { return own[k] !== undefined ? own[k] : srv[k]; };
+        if (pick("palette")) root.setAttribute("data-palette", pick("palette"));
+        if (pick("bgEffect")) root.setAttribute("data-bg-effect", pick("bgEffect"));
+        if (srv.tileOpacity !== undefined) root.style.setProperty("--tile-alpha", String(srv.tileOpacity / 100));
+        if (srv.gridMargin !== undefined) root.style.setProperty("--grid-margin", srv.gridMargin + "px");
+        if (srv.tileBlur !== undefined) root.style.setProperty("--tile-blur", srv.tileBlur + "px");
+      } catch (e) {}
+    </script>
+    <script type="module" crossorigin src="/assets/index-CGsSkQAV.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-B3kWNLlW.css">
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"></div>
   </body>
 </html>

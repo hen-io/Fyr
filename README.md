@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-# Fyr - Dashboard and app launcher for yuor selfhosted apps . the perceft home portal!
+# Fyr - Dashboard and app launcher for yuor selfhosted apps. the perceft home portal!
 
 ## Integrations
 
@@ -15,8 +15,6 @@ An integration connects Fyr to a service. It can provide
 - **its own widget types** – e.g. a download queue or a release calendar,
 - optionally **actions** a widget may trigger (e.g. "pause all").
 
-Switch them on and fill in the connection under **Admin panel → Integrasjoner / Integrations**. Secrets (tokens, passwords, API keys) are write-only: they are stored in `connections.json` in the data volume and never sent back to the browser.
-
 | Integration    | Data (metrics)                                                              | Widgets                                  |
 | -------------- | --------------------------------------------------------------------------- | ---------------------------------------- |
 | Home Assistant | any entity / attribute, history, calendars, services                        | buttons, calendar, weather (built in)    |
@@ -25,15 +23,6 @@ Switch them on and fill in the connection under **Admin panel → Integrasjoner 
 | Radarr         | queue, missing, movies, downloaded, upcoming, health issues, disk space     | release calendar, download queue         |
 | qBittorrent    | download / upload speed, torrent counts per state, ratio, free space        | torrent list with pause / resume all     |
 
-Choose the integration as the widget's *data source*; the key field then suggests the metrics it offers (e.g. `queue`, `download_speed`).
-
-### Adding an integration
-
-1. Write a subclass of `DataSource` (or `MetricSource` for a service that exposes a few named numbers) in `backend/app/datasources/`. `base.py` documents what it can provide: `FIELDS` (the admin form), `get_value` / `list_keys` / `get_history`, `WIDGETS` + `widget_data()`, `ACTIONS` + `run_widget_action()`.
-2. List it in `CATALOG` in `datasources/registry.py`. The admin form, the source pickers and the widget editor derive from it.
-3. If it ships its own widget type, add the React component in `frontend/src/widgets/` and one entry in `widgets/registry.js` (`integration: ["<id>"]`), and add the type to `INTEGRATION_WIDGETS` in `routes/widgets.py`.
-
-The server decides what a widget may do: a button/action request only carries *which* action, never a URL or payload, and needs a login unless the widget is explicitly marked `allow_anonymous`.
 
 ## Language
 

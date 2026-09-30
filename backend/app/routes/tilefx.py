@@ -42,14 +42,15 @@ def tile_image(icon, kind):
     if kind == "logo" and not tint and width <= 0:
         return Response(status=404)  # nothing to render: the client shows the plain logo
 
-    version = int(os.path.getmtime(icon_path))
+    radius = round(_number(request.args.get("r"), 0, 0, 50) * 2) / 2
+    version = f"{int(os.path.getmtime(icon_path))}-{tilefx.RENDER_VERSION}"
     if kind == "face":
-        key = f"face|{icon}|{version}"
+        key = f"face|{icon}|{version}|{radius}"
     else:
         key = f"logo|{icon}|{version}|{int(tint)}|{width}|{color}|{mode if color in ('ink', 'auto') else '-'}|{accent if color == 'accent' else '-'}"
     try:
         data = tilefx.get_or_render(
-            os.path.join(current_app.config["DATA_DIR"], "tilefx"), key, icon_path, kind, tint, width, color, mode, accent
+            os.path.join(current_app.config["DATA_DIR"], "tilefx"), key, icon_path, kind, tint, width, color, mode, accent, radius
         )
     except Exception:  # an unreadable/odd image: let the client fall back to the plain logo
         return Response(status=404)

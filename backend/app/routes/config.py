@@ -3,6 +3,7 @@ import re
 
 from flask import Blueprint, current_app, jsonify, request, send_from_directory, session
 
+from .. import tilefx
 from ..auth import current_user, require_role
 from ..fileio import load_yaml, save_yaml
 
@@ -171,7 +172,7 @@ def get_apps():
         # the icon file's mtime: part of the tile-effect image URLs, so a replaced icon is re-rendered
         if isinstance(app.get("icon"), str) and _ICON_NAME.match(app["icon"]):
             try:
-                app["iconV"] = int(os.path.getmtime(os.path.join(icons_dir, app["icon"])))
+                app["iconV"] = f"{int(os.path.getmtime(os.path.join(icons_dir, app['icon'])))}-{tilefx.RENDER_VERSION}"
             except OSError:
                 pass
     if viewer == "anonymous":

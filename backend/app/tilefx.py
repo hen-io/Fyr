@@ -22,6 +22,8 @@ LOGO_FRACTION = 0.64  # logo box as a share of the tile side
 LOGO_LIFT = 0.012  # the logo sits a touch above centre (the tile label is below)
 UNIT = SIZE / 180.0  # image px per CSS px, for the outline width
 
+RENDER_VERSION = 4  # bump when the drawing changes: it is part of every cache key and image URL
+
 STROKE_COLORS = ("ink", "accent", "white", "black", "auto")
 
 _render_lock = threading.Lock()
@@ -104,7 +106,7 @@ def _alpha_composite_solid(base, colour, mask):
     return Image.alpha_composite(base, layer)
 
 
-def render_face(icon):
+def render_face(icon, radius_pct=0):
     (c1, c2, c3), _ = palette(icon)
     size = SIZE
     gradient_size = int(size * 1.45)
@@ -137,7 +139,14 @@ def render_face(icon):
     rim = Image.new("L", (size, size), 0)
     ImageDraw.Draw(rim).rectangle((0, 0, size, size * 0.018), fill=70)
     face = _alpha_composite_solid(face, (255, 255, 255), rim.filter(ImageFilter.GaussianBlur(size * 0.006)))
-    return face.convert("RGB")
+    face = face.convert("RGBA")
+    if radius_pct > 0:
+        # Rounded corners baked into the picture, the same percentage the tile uses in CSS
+        scale = 4
+        mask = Image.new("L", (size * scale, size * scale), 0)
+        ImageDraw.Draw(mask).rounded_rectangle((0, 0, size * scale - 1, size * scale - 1), radius=size * scale * radius_pct / 100, fill=255)
+        face.putalpha(mask.resize((size, size), Image.LANCZOS))
+    return face
 
 
 def _ring(alpha, radius):
@@ -204,7 +213,7 @@ def render_logo(icon, tint, stroke_width, stroke_color, mode, accent):
 def _encode(image, kind):
     buffer = io.BytesIO()
     if kind == "face":
-        image.save(buffer, "WEBP", quality=88, method=4)
+        image.save(buffer, "WEBP", quality=90, alpha_quality=100, method=4)
     else:
         image.save(buffer, "WEBP", quality=92, alpha_quality=100, method=4)
     return buffer.getvalue()
@@ -226,7 +235,7 @@ def _trim_cache(cache_dir):
         pass
 
 
-def get_or_render(cache_dir, key, icon_path, kind, tint, stroke_width, stroke_color, mode, accent):
+def get_or_render(cache_dir, key, icon_path, kind, tint, stroke_width, stroke_color, mode, accent, radius_pct=0):
     """The rendered WebP for `key`, from the disk cache or freshly drawn."""
     os.makedirs(cache_dir, exist_ok=True)
     path = cache_path(cache_dir, key)
@@ -240,7 +249,7 @@ def get_or_render(cache_dir, key, icon_path, kind, tint, stroke_width, stroke_co
                 return handle.read()
         icon = load_icon(icon_path)
         if kind == "face":
-            data = _encode(render_face(icon), "face")
+            data = _encode(render_face(icon, radius_pct), "face")
         else:
             data = _encode(render_logo(icon, tint, stroke_width, stroke_color, mode, accent), "logo")
         tmp = path + ".tmp"

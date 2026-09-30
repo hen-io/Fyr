@@ -130,7 +130,7 @@ def render_face(icon):
     ImageDraw.Draw(gloss).ellipse((-size * 0.3, -size * 0.85, size * 1.3, size * 0.4), fill=255)
     gloss = gloss.filter(ImageFilter.GaussianBlur(size * 0.045))
     fade = ImageOps.invert(Image.linear_gradient("L").resize((size, size), Image.BILINEAR))
-    gloss = ImageChops.multiply(gloss, fade).point(lambda v: int(v * 0.27))
+    gloss = ImageChops.multiply(gloss, fade).point(lambda v: int(v * 0.12))
     face = _alpha_composite_solid(face, (255, 255, 255), gloss)
 
     # thin bright rim along the top edge and dark along the bottom

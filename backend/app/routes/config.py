@@ -115,8 +115,6 @@ def _clean_apps(raw):
             if color not in _STROKE_COLORS:
                 return None, "invalid_app"
             app["iconStrokeColor"] = color
-        if item.get("iconGradient") is True:
-            app["iconGradient"] = True
         title = app.get("title", "")
         if not title or len(title) > 80:
             return None, "invalid_title"
@@ -234,6 +232,13 @@ def put_apps():
             categories[name] = {"icon": meta.get("icon"), "description": meta.get("description"), "apps": []}
             if hidden_for:
                 categories[name]["hidden_for"] = hidden_for
+    # The admin editor sends its categories in display order; honour it when
+    # it names every category (first-seen order would shuffle empty ones).
+    named = [n for n in overrides if n in categories and n != _UNCATEGORIZED]
+    if named and all(n in named for n in categories if n != _UNCATEGORIZED):
+        ordered = {n: categories[n] for n in named}
+        ordered.update({n: v for n, v in categories.items() if n not in ordered})
+        categories = ordered
     data = {"default_mode": default_mode, "categories": categories}
     _save_yaml(_apps_path(current_app.config), data)
     return jsonify({"ok": True})

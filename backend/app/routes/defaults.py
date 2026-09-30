@@ -15,6 +15,7 @@ defaults_bp = Blueprint("defaults", __name__)
 _ALLOWED = {
     "palette": str,
     "theme": str,
+    "tileTint": str,
     "fontStyle": str,
     "roundness": str,
     "colorMode": str,

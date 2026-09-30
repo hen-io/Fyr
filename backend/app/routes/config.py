@@ -86,6 +86,7 @@ def _save_yaml(path, data):
 
 
 _ICON_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.(png|jpe?g|webp|gif|ico|svg)$")
+_STROKE_COLORS = ("ink", "accent", "white", "black")
 _APP_KEYS = ("title", "url", "internalUrl", "icon", "category", "visibility", "default_mode")
 
 
@@ -105,6 +106,17 @@ def _clean_apps(raw):
             if not isinstance(value, str) or len(value) > 500:
                 return None, "invalid_app"
             app[key] = value.strip()
+        stroke = item.get("iconStroke")
+        if stroke not in (None, "", 0):
+            if isinstance(stroke, bool) or not isinstance(stroke, (int, float)) or not 0 < stroke <= 6:
+                return None, "invalid_app"
+            app["iconStroke"] = stroke
+            color = item.get("iconStrokeColor") or "ink"
+            if color not in _STROKE_COLORS:
+                return None, "invalid_app"
+            app["iconStrokeColor"] = color
+        if item.get("iconGradient") is True:
+            app["iconGradient"] = True
         title = app.get("title", "")
         if not title or len(title) > 80:
             return None, "invalid_title"

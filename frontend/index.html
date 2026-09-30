@@ -26,18 +26,11 @@
         if (srv.tileOpacity !== undefined) root.style.setProperty("--tile-alpha", String(srv.tileOpacity / 100));
         if (srv.gridMargin !== undefined) root.style.setProperty("--grid-margin", srv.gridMargin + "px");
         if (srv.contentWidth !== undefined) root.style.setProperty("--content-max", srv.contentWidth + "px");
-        var sw = pick("logoStrokeWidth");
-        if (sw > 0) {
-          root.classList.add("has-logo-stroke");
-          root.style.setProperty("--logo-stroke-w", sw + "px");
-          var sc = { ink: "rgb(var(--ink))", accent: "var(--accent)", white: "#fff", black: "#000" }[pick("logoStrokeColor") || "ink"];
-          root.style.setProperty("--logo-stroke-c", sc || "rgb(var(--ink))");
-        }
         if (srv.tileBlur !== undefined) root.style.setProperty("--tile-blur", srv.tileBlur + "px");
       } catch (e) {}
     </script>
-    <script type="module" crossorigin src="/assets/index-BXLelT6x.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-B-0-vw9g.css">
+    <script type="module" crossorigin src="/assets/index-Ldf9xrg-.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DnR9Ahg0.css">
   </head>
   <body>
     <div id="root"></div>

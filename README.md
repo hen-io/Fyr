@@ -9,7 +9,7 @@
 
 All-In-One Docker container with a highly configurable web-based app launcher for your selfhosted web apps.
 
-Built on react & vite!
+Frontend is built on react & vite and backend is python-based. Shipped in a OCI-Container running Alpine Linux with nginx!
 
 ## Integrations
 

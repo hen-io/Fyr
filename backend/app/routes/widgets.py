@@ -243,6 +243,9 @@ def put_widgets():
     grid = _clean_grid(body.get("grid"), existing.get("grid"))
     existing["grid"] = grid
     existing["widgets"] = _clean_widgets(body["widgets"], grid["columns"])
+    # An explicit save is the admin's statement of what the dashboard holds:
+    # never seed the default footer widgets on top of it afterwards.
+    existing["zones_seeded"] = True
     _save_yaml(path, existing)
     return jsonify({"ok": True})
 

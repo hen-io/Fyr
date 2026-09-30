@@ -27,6 +27,8 @@ _ALLOWED = {
     "narrowLauncherLast": str,
     "tileOpacity": int,
     "tileBlur": int,
+    "logoStrokeWidth": (int, float),
+    "logoStrokeColor": str,
     "gridMargin": int,
     "contentWidth": int,
     "fullscreenMargin": int,

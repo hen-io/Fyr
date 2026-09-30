@@ -107,11 +107,12 @@ def _clean_apps(raw):
                 return None, "invalid_app"
             app[key] = value.strip()
         stroke = item.get("iconStroke")
-        if stroke not in (None, "", 0):
-            if isinstance(stroke, bool) or not isinstance(stroke, (int, float)) or not 0 < stroke <= 6:
+        if stroke not in (None, ""):
+            if isinstance(stroke, bool) or not isinstance(stroke, (int, float)) or not 0 <= stroke <= 6:
                 return None, "invalid_app"
             app["iconStroke"] = stroke
-            color = item.get("iconStrokeColor") or "ink"
+        color = item.get("iconStrokeColor")
+        if color not in (None, ""):
             if color not in _STROKE_COLORS:
                 return None, "invalid_app"
             app["iconStrokeColor"] = color

@@ -3,7 +3,7 @@
   "description": "Dashboard and app launcher for your selfhosted apps",
   "author": "Henrik Isefjær Olsen",
   "homepage": "https://github.com/hen-io/Fyr",
-  "version": "0.4.9",
-  "frontend_version": "0.4.14",
-  "backend_version": "0.4.5"
+  "version": "0.4.10",
+  "frontend_version": "0.4.15",
+  "backend_version": "0.4.8"
 }

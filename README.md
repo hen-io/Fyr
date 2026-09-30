@@ -21,7 +21,8 @@ An integration connects Fyr to a service. It can provide
 | MQTT           | any topic (JSON paths supported), history since Fyr started listening, publish | buttons (built in)                     |
 | Sonarr         | queue, missing, series, episodes, upcoming, health issues, disk space       | release calendar, download queue         |
 | Radarr         | queue, missing, movies, downloaded, upcoming, health issues, disk space     | release calendar, download queue         |
-| qBittorrent    | download / upload speed, torrent counts per state, ratio, free space        | torrent list with pause / resume all     |
+| qBittorrent    | download / upload speed, torrent counts per state, ratio, free space (login optional) | torrent list with pause / resume all |
+| Backrest       | backups ok / warning / failed (30 days), plans, repos, snapshots, protected size, time to next backup | plan overview, recent operations |
 
 
 ## Language

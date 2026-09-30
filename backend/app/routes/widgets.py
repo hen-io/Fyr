@@ -287,7 +287,7 @@ def list_source_keys(name):
 
 # --- integration widgets (Sonarr / Radarr / qBittorrent ...) -----------------
 
-INTEGRATION_WIDGETS = {"arr_calendar", "arr_queue", "qbit_torrents"}
+INTEGRATION_WIDGETS = {"arr_calendar", "arr_queue", "qbit_torrents", "backrest_plans", "backrest_operations"}
 _INTEGRATION_TTL = 5
 _integration_cache = {}
 _integration_lock = threading.Lock()

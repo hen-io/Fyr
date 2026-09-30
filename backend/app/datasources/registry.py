@@ -2,6 +2,7 @@ import threading
 
 from .. import connections
 from .arr import RadarrSource, SonarrSource
+from .backrest import BackrestSource
 from .home_assistant import HomeAssistantSource
 from .mqtt import MqttSource
 from .qbittorrent import QBittorrentSource
@@ -9,7 +10,7 @@ from .qbittorrent import QBittorrentSource
 # Every integration the app knows about. Adding one = write a DataSource
 # subclass (see base.py for what it can provide) and list it here; the admin
 # panel form, the source pickers and the widget editor all derive from it.
-CATALOG = (HomeAssistantSource, MqttSource, SonarrSource, RadarrSource, QBittorrentSource)
+CATALOG = (HomeAssistantSource, MqttSource, SonarrSource, RadarrSource, QBittorrentSource, BackrestSource)
 CATALOG_BY_ID = {cls.id: cls for cls in CATALOG}
 
 

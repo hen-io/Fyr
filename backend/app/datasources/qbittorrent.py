@@ -24,8 +24,8 @@ class QBittorrentSource(MetricSource):
     METRICS_TTL = 5
     FIELDS = [
         {"name": "url", "label": "Adresse", "kind": "url", "required": True, "placeholder": "http://qbittorrent:8080"},
-        {"name": "username", "label": "Brukernavn", "kind": "text", "required": True},
-        {"name": "password", "label": "Passord", "kind": "password", "required": True},
+        {"name": "username", "label": "Brukernavn (valgfritt)", "kind": "text"},
+        {"name": "password", "label": "Passord (valgfritt)", "kind": "password"},
     ]
     WIDGETS = ("qbit_torrents",)
     ACTIONS = ("pause_all", "resume_all")
@@ -43,7 +43,13 @@ class QBittorrentSource(MetricSource):
         return cls(values.get("url"), values.get("username"), values.get("password"))
 
     def is_configured(self):
-        return bool(self.url and self.username and self.password)
+        # Username and password are optional: qBittorrent can be set to skip
+        # authentication for localhost / trusted subnets, in which case Fyr
+        # simply calls the API without logging in.
+        return bool(self.url)
+
+    def _uses_login(self):
+        return bool(self.username)
 
     # --- session ------------------------------------------------------------
 
@@ -75,7 +81,7 @@ class QBittorrentSource(MetricSource):
 
             url += f"?{urlencode(params)}"
         for attempt in (0, 1):
-            if not self._sid:
+            if not self._sid and self._uses_login():
                 self._login()
             try:
                 status, _headers, body = http.request(url, headers=self._headers(), form=form, method=method)
@@ -94,13 +100,13 @@ class QBittorrentSource(MetricSource):
 
     def check(self):
         if not self.is_configured():
-            return {"connected": False, "detail": "URL/bruker/passord mangler", "latency_ms": None}
+            return {"connected": False, "detail": "URL mangler", "latency_ms": None}
         started = time.time()
         try:
             self._sid = None
             version = self._call("/app/version").decode("utf-8", "replace").strip()
         except http.HttpError as err:
-            return {"connected": False, "detail": "Feil brukernavn/passord" if err.status in (401, 403) else str(err), "latency_ms": None}
+            return {"connected": False, "detail": ("Feil brukernavn/passord" if self._uses_login() else "Krever innlogging – fyll inn brukernavn og passord") if err.status in (401, 403) else str(err), "latency_ms": None}
         except Exception as err:
             return {"connected": False, "detail": str(getattr(err, "reason", err))[:120], "latency_ms": None}
         return {"connected": True, "detail": f"qBittorrent {version}", "latency_ms": int((time.time() - started) * 1000)}

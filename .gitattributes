@@ -1,0 +1,4 @@
+# Scripts run inside the Linux container must keep LF line endings: a CRLF
+# shebang ("#!/bin/sh\r") makes the kernel report "no such file or directory".
+*.sh text eol=lf
+docker/entrypoint.sh text eol=lf

@@ -86,7 +86,7 @@ def _save_yaml(path, data):
 
 
 _ICON_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.(png|jpe?g|webp|gif|ico|svg)$")
-_STROKE_COLORS = ("ink", "accent", "white", "black")
+_STROKE_COLORS = ("ink", "accent", "white", "black", "auto")
 _APP_KEYS = ("title", "url", "internalUrl", "icon", "category", "visibility", "default_mode")
 
 
@@ -166,6 +166,14 @@ def get_apps():
     show_all = request.args.get("all") == "1" and viewer == "admin"
     hidden = set() if show_all else _hidden_categories(data, viewer)
     apps = [a for a in _flatten_apps(data) if a.get("category") not in hidden]
+    icons_dir = os.path.join(current_app.config["CONFIG_DIR"], "icons")
+    for app in apps:
+        # the icon file's mtime: part of the tile-effect image URLs, so a replaced icon is re-rendered
+        if isinstance(app.get("icon"), str) and _ICON_NAME.match(app["icon"]):
+            try:
+                app["iconV"] = int(os.path.getmtime(os.path.join(icons_dir, app["icon"])))
+            except OSError:
+                pass
     if viewer == "anonymous":
         # visibility: "authenticated" must actually hide the tile, not just
         # let the frontend choose not to render it - otherwise anyone can

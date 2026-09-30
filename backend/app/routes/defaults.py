@@ -15,6 +15,7 @@ defaults_bp = Blueprint("defaults", __name__)
 _ALLOWED = {
     "palette": str,
     "theme": str,
+    "performance": str,
     "logoStrokeWidth": (int, float),
     "logoStrokeColor": str,
     "tileTint": str,

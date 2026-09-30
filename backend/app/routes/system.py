@@ -6,7 +6,7 @@ import sys
 import threading
 import time
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request
 
 from ..auth import require_role
 from ..meta import load_meta
@@ -78,3 +78,48 @@ def restart_container():
     # browser before the container starts going down.
     threading.Thread(target=_restart_after, args=(1,), daemon=True).start()
     return jsonify({"ok": True})
+
+
+# --- container logs ---------------------------------------------------------
+# supervisord writes each service's output to a size-rotated file here (and a
+# tail process copies it to the container's stdout, so `docker logs` still works).
+LOG_DIR = os.environ.get("FYR_LOG_DIR", "/var/log/fyr")
+LOG_SOURCES = {"backend": "backend.log", "nginx": "nginx.log"}
+_TAIL_BYTES = 1024 * 1024
+
+
+def _tail_lines(path, count):
+    """The last `count` lines of a text file, read from its end."""
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - _TAIL_BYTES))
+            data = handle.read()
+    except OSError:
+        return []
+    lines = data.decode("utf-8", errors="replace").splitlines()
+    return lines[-count:]
+
+
+def _source_lines(name, count):
+    path = os.path.join(LOG_DIR, LOG_SOURCES[name])
+    lines = _tail_lines(path, count)
+    if len(lines) < count:  # a fresh rotation: continue from the previous file
+        lines = _tail_lines(path + ".1", count - len(lines)) + lines
+    return lines
+
+
+@system_bp.route("/api/system/logs")
+@require_role("admin")
+def container_logs():
+    try:
+        count = max(10, min(2000, int(request.args.get("lines", 200))))
+    except ValueError:
+        count = 200
+    source = request.args.get("source", "backend")
+    if source not in LOG_SOURCES:
+        return jsonify({"error": "invalid_source"}), 400
+    available = any(os.path.isfile(os.path.join(LOG_DIR, name)) for name in LOG_SOURCES.values())
+    lines = _source_lines(source, count) if available else []
+    return jsonify({"available": available, "source": source, "lines": lines})

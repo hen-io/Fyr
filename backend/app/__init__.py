@@ -15,6 +15,7 @@ from .routes.defaults import defaults_bp
 from .routes.legacy import legacy_bp
 from .routes.status import status_bp
 from .routes.system import system_bp
+from .routes.tilefx import tilefx_bp
 from .routes.users import users_bp
 from .routes.widgets import widgets_bp
 
@@ -57,6 +58,7 @@ def create_app():
     app.register_blueprint(calendar_bp)
     app.register_blueprint(system_bp)
     app.register_blueprint(users_bp)
+    app.register_blueprint(tilefx_bp)
 
     # Every route here is a JSON API - Flask's default HTML error pages
     # would be a surprise to any caller, so every error response is JSON too.

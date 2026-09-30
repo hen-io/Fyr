@@ -17,7 +17,7 @@ _ALLOWED = {
     "theme": str,
     "tileTint": str,
     "fontStyle": str,
-    "roundness": str,
+    "roundness": (int, float),
     "colorMode": str,
     "bgEffect": str,
     "hoverEffect": str,

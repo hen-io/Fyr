@@ -22,7 +22,7 @@ LOGO_FRACTION = 0.64  # logo box as a share of the tile side
 LOGO_LIFT = 0.012  # the logo sits a touch above centre (the tile label is below)
 UNIT = SIZE / 180.0  # image px per CSS px, for the outline width
 
-RENDER_VERSION = 11  # bump when the drawing changes: it is part of every cache key and image URL
+RENDER_VERSION = 12  # bump when the drawing changes: it is part of every cache key and image URL
 
 STROKE_COLORS = ("ink", "accent", "white", "black", "auto")
 
@@ -126,7 +126,7 @@ def _alpha_composite_solid(base, colour, mask):
     return Image.alpha_composite(base, layer)
 
 
-BADGE_STYLES = ("glass", "bubble", "crystal", "dome", "pillow", "ring", "inset", "gloss", "neon", "flat")  # the 3D shading
+BADGE_STYLES = ("glass", "bubble", "crystal", "jelly", "dome", "lens", "pillow", "ring", "ridge", "chisel", "inset", "metal", "gloss", "neon", "flat")  # the 3D shading
 BADGE_COLOURS = ("diagonal", "radial", "vertical", "solid", "duo", "dark", "pale", "neutral")  # how the logo colour is laid out
 
 _SS = 3  # supersampling for the rounded shapes
@@ -292,6 +292,57 @@ def render_face(icon, radius_pct=0, style="glass", colour_style="diagonal"):
         face = paint(face, white, _scale(within(hot), 0.42))
         face = paint(face, white, _scale(within(_ellipse(size, (0.24, 0.15, 0.48, 0.3), 0.03)), 0.5))
         return paint(face, white, rim(0.8))
+
+    if style == "jelly":  # soft and wobbly: light glows through the whole edge, a fat highlight sits low
+        edge = _bevel(size, radius_pct, mask, size * 0.16)
+        face = paint(face, _lighten(c1, 0.75), _scale(edge, 0.55))
+        face = paint(face, c3, _scale(both(_bevel(size, radius_pct, mask, size * 0.05), leaving), 0.35))
+        face = paint(face, white, _scale(within(_ellipse(size, (0.14, 0.62, 0.86, 0.98), 0.06)), 0.3))
+        face = paint(face, white, _scale(within(_ellipse(size, (0.16, 0.07, 0.62, 0.2), 0.02)), 0.6))
+        return paint(face, white, rim(0.7))
+
+    if style == "metal":  # brushed metal: bands of light running across, a machined edge
+        bands = _vertical(size, 0, 1).point(lambda v: int(255 * (0.5 + 0.5 * math.sin(v / 255 * math.pi * 3.2 + 0.6)) ** 1.5))
+        face = paint(face, white, _scale(within(bands), 0.36))
+        dark_bands = _vertical(size, 0, 1).point(lambda v: int(255 * (0.5 - 0.5 * math.sin(v / 255 * math.pi * 3.2 + 0.6)) ** 2))
+        face = paint(face, (0, 0, 0), _scale(within(dark_bands), 0.3))
+        edge = ImageChops.subtract(mask, _shape(size, radius_pct, size * 0.035))
+        face = paint(face, white, _scale(both(edge, entering), 0.6))
+        face = paint(face, (0, 0, 0), _scale(both(edge, leaving), 0.5))
+        face = paint(face, (0, 0, 0), _scale(_outline(size, radius_pct, size * 0.004, size * 0.035), 0.35))
+        return paint(face, white, rim())
+
+    if style == "chisel":  # hard cut edges: flat facets, no softness
+        edge = ImageChops.subtract(mask, _shape(size, radius_pct, size * 0.07))
+        lit = diagonal.point(lambda v: 255 if v < 128 else 0)
+        unlit = diagonal.point(lambda v: 255 if v >= 128 else 0)
+        face = paint(face, white, _scale(both(edge, lit), 0.5))
+        face = paint(face, (0, 0, 0), _scale(both(edge, unlit), 0.42))
+        face = paint(face, white, _scale(_outline(size, radius_pct, size * 0.004, size * 0.07), 0.35))
+        return paint(face, white, rim(0.9))
+
+    if style == "ridge":  # two raised ridges running round the edge
+        for inset in (size * 0.03, size * 0.085):
+            groove = _outline(size, radius_pct, size * 0.03, inset).filter(ImageFilter.GaussianBlur(size * 0.006))
+            face = paint(face, white, _scale(within(both(groove, entering)), 0.6))
+            face = paint(face, c3, _scale(within(both(groove, leaving)), 0.7))
+            face = paint(face, (0, 0, 0), _scale(within(_outline(size, radius_pct, size * 0.004, inset + size * 0.03)), 0.28))
+        face = paint(face, white, _scale(within(_ellipse(size, (0.2, 0.18, 0.8, 0.8), 0.12)), 0.08))
+        return paint(face, white, rim())
+
+    if style == "lens":  # a thick magnifying lens set into the tile
+        ring_outer = _ellipse(size, (0.1, 0.1, 0.9, 0.9), 0.004)
+        ring_inner = _ellipse(size, (0.14, 0.14, 0.86, 0.86), 0.004)
+        collar = ImageChops.subtract(ring_outer, ring_inner)
+        face = paint(face, c3, _scale(within(ImageChops.subtract(mask, ring_outer)), 0.35))  # the tile around the lens sits lower
+        face = paint(face, white, _scale(both(collar, entering), 0.7))
+        face = paint(face, (0, 0, 0), _scale(both(collar, leaving), 0.5))
+        inside = ring_inner
+        face = paint(face, white, _scale(both(inside, _radial(size, 0.38, 0.32, 0.5).point(lambda v: 255 - v)), 0.34))
+        face = paint(face, c3, _scale(both(inside, gray.point(lambda v: int(255 * _clamp((v - 110) / 100, 0, 1)))), 0.5))
+        crescent = ImageChops.subtract(_ellipse(size, (0.16, 0.16, 0.84, 0.84), 0.004), _ellipse(size, (0.16, 0.1, 0.84, 0.8), 0.02))
+        face = paint(face, _lighten(c1, 0.7), _scale(within(crescent), 0.6))
+        return paint(face, white, rim(0.7))
 
     if style == "neon":  # the middle sinks into the dark, the edge glows in the logo's colour
         face = paint(face, (0, 0, 0), _scale(within(_ellipse(size, (0.02, 0.02, 0.98, 0.98), 0.1)), 0.72))

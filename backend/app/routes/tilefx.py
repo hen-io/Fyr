@@ -46,14 +46,17 @@ def tile_image(icon, kind):
     style = request.args.get("s", "glass")
     if style not in tilefx.BADGE_STYLES:
         style = "glass"
+    colour_style = request.args.get("c", "diagonal")
+    if colour_style not in tilefx.BADGE_COLOURS:
+        colour_style = "diagonal"
     version = f"{int(os.path.getmtime(icon_path))}-{tilefx.RENDER_VERSION}"
     if kind == "face":
-        key = f"face|{icon}|{version}|{radius}|{style}"
+        key = f"face|{icon}|{version}|{radius}|{style}|{colour_style}"
     else:
         key = f"logo|{icon}|{version}|{int(tint)}|{width}|{color}|{mode if color in ('ink', 'auto') else '-'}|{accent if color == 'accent' else '-'}"
     try:
         data = tilefx.get_or_render(
-            os.path.join(current_app.config["DATA_DIR"], "tilefx"), key, icon_path, kind, tint, width, color, mode, accent, radius, style
+            os.path.join(current_app.config["DATA_DIR"], "tilefx"), key, icon_path, kind, tint, width, color, mode, accent, radius, style, colour_style
         )
     except Exception:  # an unreadable/odd image: let the client fall back to the plain logo
         return Response(status=404)

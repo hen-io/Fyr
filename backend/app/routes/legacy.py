@@ -26,6 +26,15 @@ CONDITION_ICONS = {
 }
 
 
+def _home_assistant():
+    """The Home Assistant integration, or None when it is switched off or not set up."""
+    try:
+        ha = current_app.datasources.get("home_assistant")
+    except KeyError:
+        return None
+    return ha if ha.is_configured() else None
+
+
 @legacy_bp.route("/api/health")
 def health():
     return jsonify({"ok": True})
@@ -39,8 +48,8 @@ def weather():
     # (usePolledFetch swallows any non-ok response), but a 404 reads far
     # less alarming in the browser console than a Bad Gateway for what's
     # actually just an unset .env.
-    ha = current_app.datasources.get("home_assistant")
-    if not ha.is_configured():
+    ha = _home_assistant()
+    if ha is None:
         return jsonify({"error": "weather_not_configured"}), 404
 
     try:
@@ -63,8 +72,8 @@ def weather():
 
 @legacy_bp.route("/api/home")
 def home_status():
-    ha = current_app.datasources.get("home_assistant")
-    if not ha.is_configured():
+    ha = _home_assistant()
+    if ha is None:
         return jsonify({"error": "home_status_not_configured"}), 404
 
     mode = None

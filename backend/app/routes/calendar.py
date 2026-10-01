@@ -55,18 +55,6 @@ def _collect(entities, days, limit):
     return normalized[:limit]
 
 
-@calendar_bp.route("/api/calendar/upcoming")
-def upcoming():
-    # HA_CALENDAR_ENTITY is comma-separated - one or many calendar.* entities.
-    entities = [e.strip() for e in current_app.config["HA_CALENDAR_ENTITY"].split(",") if e.strip()]
-    if not entities:
-        return jsonify({"error": "calendar_not_configured"}), 404
-    result = _collect(entities, 14, 5)
-    if result is None:
-        return jsonify({"error": "calendar_unavailable"}), 502
-    return jsonify(result)
-
-
 @calendar_bp.route("/api/widget/<widget_id>/events")
 def widget_events(widget_id):
     """Events for a calendar widget, from the calendars chosen in that

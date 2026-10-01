@@ -18,6 +18,7 @@ class QBittorrentSource(MetricSource):
     list widget, and pause-all / resume-all actions."""
 
     id = "qbittorrent"
+    category = "downloads"
     label = "qBittorrent"
     icon = "download-network"
     description = "Nedlastinger: hastighet, antall torrenter og en torrentliste."

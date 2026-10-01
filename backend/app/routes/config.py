@@ -1,11 +1,12 @@
 import os
 import re
 
-from flask import Blueprint, current_app, jsonify, request, send_from_directory, session
+from flask import Blueprint, current_app, jsonify, request, send_from_directory
 
-from .. import tilefx
+from .. import tileurls
 from ..auth import current_user, require_role
 from ..fileio import load_yaml, save_yaml
+from ..imageio import ImageRejected, verify_icon
 
 config_bp = Blueprint("config", __name__)
 
@@ -167,20 +168,21 @@ def get_apps():
     show_all = request.args.get("all") == "1" and viewer == "admin"
     hidden = set() if show_all else _hidden_categories(data, viewer)
     apps = [a for a in _flatten_apps(data) if a.get("category") not in hidden]
-    icons_dir = os.path.join(current_app.config["CONFIG_DIR"], "icons")
-    for app in apps:
-        # the icon file's mtime: part of the tile-effect image URLs, so a replaced icon is re-rendered
-        if isinstance(app.get("icon"), str) and _ICON_NAME.match(app["icon"]):
-            try:
-                app["iconV"] = f"{int(os.path.getmtime(os.path.join(icons_dir, app['icon'])))}-{tilefx.RENDER_VERSION}"
-            except OSError:
-                pass
     if viewer == "anonymous":
         # visibility: "authenticated" must actually hide the tile, not just
         # let the frontend choose not to render it - otherwise anyone can
         # read it straight off this endpoint. Filter here, not in TileGrid.
         apps = [app for app in apps if app.get("visibility") != "authenticated"]
-    meta = {k: v for k, v in _category_meta(data).items() if k not in hidden}
+    # Server-drawn tile effects: signed picture URLs, worked out from the
+    # admin's settings (see tileurls.py), for the apps that get them.
+    chosen = tileurls.settings(_load_yaml(_layout_path(current_app.config), {}).get("defaults"))
+    icons_dir = os.path.join(current_app.config["CONFIG_DIR"], "icons")
+    for app in apps:
+        if isinstance(app.get("icon"), str) and _ICON_NAME.match(app["icon"]):
+            fx = tileurls.urls_for(app, chosen, icons_dir, current_app.config["SECRET_KEY"])
+            if fx:
+                app["fx"] = fx
+    meta ={k: v for k, v in _category_meta(data).items() if k not in hidden}
     if not show_all:
         for entry in meta.values():
             entry.pop("hidden_for", None)
@@ -291,7 +293,7 @@ def put_layout():
 @config_bp.route("/icons/<path:filename>")
 def serve_icon(filename):
     icons_dir = os.path.join(current_app.config["CONFIG_DIR"], "icons")
-    response = send_from_directory(icons_dir, filename)
+    response = send_from_directory(icons_dir, filename, max_age=300)
     # Icons are images; if one is ever opened as a page it must not run
     # anything (an SVG could carry script).
     response.headers["Content-Security-Policy"] = "sandbox; default-src 'none'; img-src 'self'"
@@ -322,17 +324,10 @@ def upload_icon():
     data = file.read(1024 * 1024 + 1)
     if len(data) > 1024 * 1024:
         return jsonify({"error": "file_too_large"}), 400
-    # Check the bytes really are the image type the extension claims.
-    signatures = {
-        "png": (b"\x89PNG",),
-        "jpg": (b"\xff\xd8",),
-        "jpeg": (b"\xff\xd8",),
-        "gif": (b"GIF8",),
-        "webp": (b"RIFF",),
-        "ico": (b"\x00\x00\x01\x00",),
-    }
-    ext = name.rsplit(".", 1)[1].lower()
-    if not data.startswith(signatures[ext]):
+    # The bytes must really decode as the image type the extension claims.
+    try:
+        verify_icon(data, name.rsplit(".", 1)[1])
+    except ImageRejected:
         return jsonify({"error": "not_an_image"}), 400
     icons_dir = os.path.join(current_app.config["CONFIG_DIR"], "icons")
     os.makedirs(icons_dir, exist_ok=True)

@@ -49,6 +49,11 @@ def _hex_rgb(value, fallback):
     return fallback
 
 
+def _pixels(image):
+    """Every pixel of an image (Pillow renamed the call in 12; both spellings work)."""
+    return getattr(image, "get_flattened_data", image.getdata)()
+
+
 def load_icon(path):
     image = Image.open(path)
     image.load()
@@ -59,7 +64,7 @@ def _hue_bins(icon):
     """Saturated, opaque pixels vote for their hue (12 bins): [weight, hue*w, sat*w]."""
     small = icon.resize((48, 48), Image.LANCZOS)
     bins = [[0.0, 0.0, 0.0] for _ in range(12)]
-    for r, g, b, a in small.getdata():
+    for r, g, b, a in _pixels(small):
         if a < 128:
             continue
         h, l, s = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
@@ -99,7 +104,7 @@ def secondary_hue(icon):
 def average_grey(icon):
     small = icon.resize((24, 24), Image.LANCZOS)
     total = count = 0
-    for r, g, b, a in small.getdata():
+    for r, g, b, a in _pixels(small):
         if a >= 128:
             total += (r + g + b) / 3
             count += 1

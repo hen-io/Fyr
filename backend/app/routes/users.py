@@ -1,6 +1,10 @@
-from flask import Blueprint, current_app, jsonify, request, session
+import os
 
-from ..auth import USERNAME_RE, VALID_ROLES, create_user, load_users, require_role, save_users
+from flask import Blueprint, current_app, jsonify, session
+
+from ..auth import USERNAME_RE, VALID_ROLES, change_password, create_user, load_users, require_role, save_users
+from ..prefs import clear_prefs
+from ..reqtools import json_object, secret, text
 
 users_bp = Blueprint("users", __name__)
 
@@ -19,16 +23,16 @@ def list_users():
 @users_bp.route("/api/users", methods=["POST"])
 @require_role("admin")
 def add_user():
-    body = request.get_json(silent=True) or {}
-    username = (body.get("username") or "").strip()
-    password = body.get("password") or ""
+    body = json_object()
+    username = text(body, "username", 128)
+    password = secret(body, "password")
     role = body.get("role") or "visitor"
 
     if not username:
         return jsonify({"error": "username_required"}), 400
     if not USERNAME_RE.match(username):
         return jsonify({"error": "invalid_username"}), 400
-    if role not in VALID_ROLES:
+    if not isinstance(role, str) or role not in VALID_ROLES:
         return jsonify({"error": "invalid_role"}), 400
     if len(password) < 8:
         return jsonify({"error": "password_too_short"}), 400
@@ -58,17 +62,40 @@ def delete_user(username):
     if users[username].get("role") == "admin" and _admin_count(users) <= 1:
         return jsonify({"error": "cannot_delete_last_admin"}), 400
 
-    del users[username]
+    removed = users.pop(username)
     save_users(users, current_app.config)
+    # Nothing of the account is left behind: its saved settings and picture go too.
+    clear_prefs(current_app.config, username)
+    ext = removed.get("avatar_ext")
+    if ext and USERNAME_RE.match(username):
+        try:
+            os.remove(os.path.join(current_app.config["DATA_DIR"], "avatars", f"{username}.{ext}"))
+        except OSError:
+            pass
+    return jsonify({"ok": True})
+
+
+@users_bp.route("/api/users/<username>/password", methods=["PUT"])
+@require_role("admin")
+def reset_password(username):
+    """An admin sets a new password for an account (a forgotten password).
+    Every session that account had open ends."""
+    password = secret(json_object(), "password")
+    if len(password) < 8:
+        return jsonify({"error": "password_too_short"}), 400
+    if username not in load_users(current_app.config):
+        return jsonify({"error": "not_found"}), 404
+    epoch = change_password(username, password, current_app.config)
+    if session.get("username") == username:
+        session["epoch"] = epoch  # resetting your own password keeps you signed in
     return jsonify({"ok": True})
 
 
 @users_bp.route("/api/users/<username>/role", methods=["PUT"])
 @require_role("admin")
 def change_role(username):
-    body = request.get_json(silent=True) or {}
-    role = body.get("role")
-    if role not in VALID_ROLES:
+    role = json_object().get("role")
+    if not isinstance(role, str) or role not in VALID_ROLES:
         return jsonify({"error": "invalid_role"}), 400
 
     users = load_users(current_app.config)

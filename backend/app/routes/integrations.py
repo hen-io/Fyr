@@ -29,6 +29,7 @@ def _entry(integration_id, with_status=True):
     entry = {
         "id": cls.id,
         "label": cls.label,
+        "category": cls.category,
         "icon": cls.icon,
         "description": cls.description,
         "enabled": enabled,
@@ -64,7 +65,6 @@ def update_integration(integration_id):
 
     data_dir = current_app.config["DATA_DIR"]
     registry = current_app.datasources
-    _enabled, current = registry.settings(integration_id)
     saved = connections.load(data_dir, integration_id)
     incoming = body.get("values") if isinstance(body.get("values"), dict) else {}
     clear = set(body.get("clear") or []) if isinstance(body.get("clear"), list) else set()
@@ -110,5 +110,4 @@ def update_integration(integration_id):
         saved["enabled"] = bool(body["enabled"])
     connections.save(data_dir, integration_id, saved)
     registry.reload(integration_id)
-    _ = current  # (values before the change are not needed once saved)
     return jsonify(_entry(integration_id))

@@ -4,14 +4,35 @@ from .. import connections
 from .arr import RadarrSource, SonarrSource
 from .backrest import BackrestSource
 from .home_assistant import HomeAssistantSource
+from .infra import AdGuardSource, FrigateSource, ProwlarrSource, ProxmoxSource, UptimeKumaSource
+from .media import ImmichSource, JellyfinSource, SeerrSource
 from .mqtt import MqttSource
 from .qbittorrent import QBittorrentSource
+from .system import SystemSource
 
 # Every integration the app knows about. Adding one = write a DataSource
 # subclass (see base.py for what it can provide) and list it here; the admin
 # panel form, the source pickers and the widget editor all derive from it.
-CATALOG = (HomeAssistantSource, MqttSource, SonarrSource, RadarrSource, QBittorrentSource, BackrestSource)
+CATALOG = (
+    HomeAssistantSource,
+    MqttSource,
+    SystemSource,
+    SonarrSource,
+    RadarrSource,
+    ProwlarrSource,
+    QBittorrentSource,
+    JellyfinSource,
+    SeerrSource,
+    ImmichSource,
+    FrigateSource,
+    AdGuardSource,
+    UptimeKumaSource,
+    ProxmoxSource,
+    BackrestSource,
+)
 CATALOG_BY_ID = {cls.id: cls for cls in CATALOG}
+# Widget types that an integration serves itself (through widget_data()).
+INTEGRATION_WIDGETS = frozenset(widget for cls in CATALOG for widget in cls.WIDGETS)
 
 
 class DataSourceRegistry:

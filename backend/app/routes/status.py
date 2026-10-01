@@ -4,6 +4,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
 from flask import Blueprint, current_app, jsonify, request
@@ -20,9 +21,9 @@ from .config import _apps_path, _flatten_apps, _hidden_categories, _load_yaml, _
 #
 # The one thing this endpoint must never become is an open URL fetcher: this
 # container has network_mode: host, i.e. full LAN access, so a request to
-# fetch an arbitrary attacker-supplied URL would be a real SSRF risk. It
-# only ever checks the HOSTNAME of the requested URL against
-# STATUS_ALLOWED_HOSTS - see config.py.
+# fetch an arbitrary attacker-supplied URL would be a real SSRF risk. It only
+# checks URLs that are on the dashboard (exactly as configured), plus any host
+# explicitly opened up with STATUS_ALLOWED_HOSTS - see config.py.
 
 status_bp = Blueprint("status", __name__)
 
@@ -32,36 +33,26 @@ def _hostname_allowed(hostname, patterns):
     return any(fnmatch.fnmatch(hostname, pattern.lower()) for pattern in patterns)
 
 
-def _origin(url):
-    parsed = urlparse(url or "")
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        return None
-    try:
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    except ValueError:
-        return None
-    return (parsed.scheme, parsed.hostname.lower(), port)
-
-
-def _configured_origins():
-    """Origins (scheme, host, port) of the apps the admin configured - the
-    tile's url or its internal (status-check) url. Checking these needs no
-    entry in STATUS_ALLOWED_HOSTS: they were entered by an admin, so the
-    endpoint can only ever probe addresses that are already on the dashboard.
+def _configured_urls():
+    """The exact URLs an admin put on the dashboard (a tile's url or its
+    internal status-check url) that the caller is allowed to see. Checking
+    these needs no entry in STATUS_ALLOWED_HOSTS. Only these exact URLs - not
+    other paths on the same host - or the endpoint would be a way to send a
+    GET to any path of an internal service and learn whether it answered.
     Apps the caller may not see (hidden category / logged-in-only) are left
-    out, so status can't be used to probe them."""
+    out, so status can't be used to probe them either."""
     data = _load_yaml(_apps_path(current_app.config), {})
     viewer = _viewer()
     hidden = _hidden_categories(data, viewer)
-    origins = set()
+    urls = set()
     for app in _flatten_apps(data):
         if app.get("category") in hidden or (viewer == "anonymous" and app.get("visibility") == "authenticated"):
             continue
         for key in ("internalUrl", "url"):
-            origin = _origin(app.get(key))
-            if origin:
-                origins.add(origin)
-    return origins
+            value = app.get(key)
+            if isinstance(value, str) and value.strip():
+                urls.add(value.strip())
+    return urls
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -87,23 +78,30 @@ _cache_lock = threading.Lock()
 
 @status_bp.route("/api/status")
 def check_status():
-    target = request.args.get("url", "")
-    parsed = urlparse(target)
-
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+    target = request.args.get("url", "").strip()
+    try:
+        parsed = urlparse(target)
+        hostname = parsed.hostname
+        parsed.port  # noqa: B018 - raises ValueError for a malformed port
+    except ValueError:
         return jsonify({"status": "unknown", "error": "invalid_url"}), 400
 
-    if not (
-        _hostname_allowed(parsed.hostname, current_app.config["STATUS_ALLOWED_HOSTS"])
-        or _origin(target) in _configured_origins()
-    ):
+    if parsed.scheme not in ("http", "https") or not hostname or len(target) > 2000:
+        return jsonify({"status": "unknown", "error": "invalid_url"}), 400
+
+    if not (target in _configured_urls() or _hostname_allowed(hostname, current_app.config["STATUS_ALLOWED_HOSTS"])):
         return jsonify({"status": "unknown", "error": "host_not_allowed"}), 403
 
+    return jsonify({"status": _probe(target)})
+
+
+def _probe(target):
+    """"up" or "down" for one already-approved URL, through the shared cache."""
     now = time.time()
     with _cache_lock:
         hit = _cache.get(target)
     if hit and now - hit[0] < _CACHE_TTL:
-        return jsonify({"status": hit[1]})
+        return hit[1]
 
     try:
         req = urllib.request.Request(target, method="GET", headers={"User-Agent": "fyr-status-check"})
@@ -130,4 +128,28 @@ def check_status():
         if len(_cache) > 512:
             _cache.clear()
         _cache[target] = (now, result)
-    return jsonify({"status": result})
+    return result
+
+
+@status_bp.route("/api/status/summary")
+def status_summary():
+    """Every app the caller may see, with its status, in one answer - for the
+    "Appstatus" widget (one request instead of one per app). Uses the same
+    cache as the per-tile checks, so it costs the apps nothing extra."""
+    data = _load_yaml(_apps_path(current_app.config), {})
+    viewer = _viewer()
+    hidden = _hidden_categories(data, viewer)
+    apps = []
+    for app in _flatten_apps(data):
+        if app.get("category") in hidden or (viewer == "anonymous" and app.get("visibility") == "authenticated"):
+            continue
+        target = next((app[key].strip() for key in ("internalUrl", "url") if isinstance(app.get(key), str) and app[key].strip()), None)
+        if not target or urlparse(target).scheme not in ("http", "https"):
+            continue
+        apps.append((str(app.get("title") or target), target))
+    apps = apps[:200]
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda entry: _probe(entry[1]), apps))
+    items = [{"title": title, "status": status} for (title, _target), status in zip(apps, results)]
+    return jsonify({"items": items, "up": results.count("up"), "down": results.count("down"), "total": len(items)})

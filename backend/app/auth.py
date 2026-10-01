@@ -40,7 +40,25 @@ def change_password(username, new_password, config=None):
     if username not in users:
         raise KeyError(username)
     users[username]["password_hash"] = generate_password_hash(new_password)
+    users[username]["session_epoch"] = int(users[username].get("session_epoch") or 0) + 1
     save_users(users, config)
+    return users[username]["session_epoch"]
+
+
+def session_epoch(username, config=None):
+    """Bumped whenever every existing session of the account must stop working
+    (password changed or reset, "sign out everywhere"). A session carries the
+    epoch it was created under; current_user() refuses one that is behind."""
+    return int((load_users(config).get(username) or {}).get("session_epoch") or 0)
+
+
+def bump_session_epoch(username, config=None):
+    users = load_users(config)
+    if username not in users:
+        raise KeyError(username)
+    users[username]["session_epoch"] = int(users[username].get("session_epoch") or 0) + 1
+    save_users(users, config)
+    return users[username]["session_epoch"]
 
 
 def create_user(username, password, role, config=None):
@@ -80,13 +98,15 @@ def current_user(config=None):
     log out, which defeats the entire point of server-side sessions being
     revocable in the first place. Returns None if not logged in, or if the
     account no longer exists - clearing the session in that second case,
-    since there's nothing left for it to legitimately refer to."""
+    since there's nothing left for it to legitimately refer to. The same
+    goes for a session created before the account's password was last
+    changed (see session_epoch)."""
     if "username" not in session:
         return None
     username = session["username"]
     users = load_users(config)
     user = users.get(username)
-    if not user:
+    if not user or int(session.get("epoch") or 0) != int(user.get("session_epoch") or 0):
         session.clear()
         return None
     return {

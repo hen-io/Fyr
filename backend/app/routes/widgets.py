@@ -8,6 +8,7 @@ import uuid
 from flask import Blueprint, current_app, jsonify, request
 
 from ..auth import current_user, require_role
+from ..datasources.registry import INTEGRATION_WIDGETS
 from .config import _load_yaml, _save_yaml, _layout_path
 
 widgets_bp = Blueprint("widgets", __name__)
@@ -198,7 +199,7 @@ def read_id(key, attribute):
 
 def _reads(widget):
     """Every (source, key, attribute) this widget wants live values for."""
-    default_source = widget.get("source")
+    default_source = widget.get("source") if isinstance(widget.get("source"), str) else None
     reads = []
     if widget.get("key"):
         reads.append((default_source, widget["key"], widget.get("attribute")))
@@ -210,7 +211,7 @@ def _reads(widget):
         for button in widget.get("buttons") or []:
             if isinstance(button, dict) and button.get("entity_id"):
                 reads.append(("home_assistant", button["entity_id"], None))
-    return [(s, k, a) for s, k, a in reads if s and isinstance(k, str) and k]
+    return [(s, k, a if isinstance(a, str) else None) for s, k, a in reads if isinstance(s, str) and s and isinstance(k, str) and k][:200]
 
 
 def _collect(widget):
@@ -290,7 +291,6 @@ def list_source_keys(name):
 
 # --- integration widgets (Sonarr / Radarr / qBittorrent ...) -----------------
 
-INTEGRATION_WIDGETS = {"arr_calendar", "arr_queue", "qbit_torrents", "backrest_plans", "backrest_operations"}
 _INTEGRATION_TTL = 5
 _integration_cache = {}
 _integration_lock = threading.Lock()
@@ -298,10 +298,10 @@ _integration_lock = threading.Lock()
 
 def _integration_source(widget):
     """The live integration serving this widget, or (None, error response)."""
-    if widget.get("type") not in INTEGRATION_WIDGETS:
+    if not isinstance(widget.get("type"), str) or widget["type"] not in INTEGRATION_WIDGETS:
         return None, (jsonify({"error": "not_found"}), 404)
     try:
-        source = current_app.datasources.get(widget.get("source"))
+        source = current_app.datasources.get(str(widget.get("source") or ""))
     except KeyError:
         return None, (jsonify({"error": "integration_disabled"}), 404)
     if widget["type"] not in source.WIDGETS:
@@ -395,23 +395,44 @@ def get_widget_weather(widget_id):
     """Current conditions for a weather widget: the weather.* entity chosen
     in the widget (else HA_WEATHER_ENTITY), plus a short daily forecast when
     the entity still exposes one as an attribute."""
-    from .legacy import CONDITION_ICONS
-
     widget = _find_widget(widget_id)
     if widget is None or widget.get("type") != "weather":
         return jsonify({"error": "not_found"}), 404
+    return _weather_response(widget)
+
+
+@widgets_bp.route("/api/weather-preview", methods=["POST"])
+@require_role("admin")
+def preview_weather():
+    """The editor's live preview of a weather widget that is not saved yet."""
+    widget = request.get_json(silent=True)
+    if not isinstance(widget, dict):
+        return jsonify({"error": "invalid_body"}), 400
+    return _weather_response(widget)
+
+
+def _weather_response(widget):
+    from .legacy import CONDITION_ICONS
+
     entity = widget.get("key") or current_app.config["HA_WEATHER_ENTITY"]
     if not isinstance(entity, str) or not _WEATHER_ID.match(entity):
         return jsonify({"error": "invalid_entity"}), 400
     try:
-        payload = current_app.datasources.get("home_assistant").get_value(entity, max_age=WIDGET_MAX_AGE * 4)
+        source = current_app.datasources.get("home_assistant")
+        payload = source.get_value(entity, max_age=WIDGET_MAX_AGE * 4)
     except Exception:
         return jsonify({"error": "weather_unavailable"}), 502
 
     attrs = payload.get("attributes") or {}
     condition = payload.get("state", "unknown")
+    days = attrs.get("forecast")
+    if not days:
+        try:
+            days = source.get_forecast(entity)
+        except Exception:
+            days = []
     forecast = []
-    for day in (attrs.get("forecast") or [])[:5]:
+    for day in (days or [])[:6]:
         if isinstance(day, dict):
             forecast.append(
                 {
@@ -420,6 +441,7 @@ def get_widget_weather(widget_id):
                     "icon": CONDITION_ICONS.get(day.get("condition"), "🌡️"),
                     "temperature": day.get("temperature"),
                     "templow": day.get("templow"),
+                    "precipitation": day.get("precipitation"),
                 }
             )
     return jsonify(
@@ -445,9 +467,10 @@ def get_widget_history(widget_id):
     if widget is None or not widget.get("key") or not widget.get("source"):
         return jsonify({"error": "not_found"}), 404
     try:
-        hours = min(168.0, max(0.05, float(request.args.get("hours", widget.get("hours") or 24))))
-    except ValueError:
+        hours = float(request.args.get("hours", widget.get("hours") or 24))
+    except (TypeError, ValueError):
         hours = 24.0
+    hours = min(168.0, max(0.05, hours)) if math.isfinite(hours) else 24.0
 
     try:
         source = current_app.datasources.get(widget["source"])

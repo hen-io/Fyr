@@ -1,0 +1,4 @@
+# Only for working on the backend - not installed in the container.
+-r requirements.txt
+pytest
+ruff

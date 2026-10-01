@@ -16,6 +16,7 @@ class HomeAssistantSource(DataSource):
     every few seconds) pass a smaller max_age."""
 
     id = "home_assistant"
+    category = "smarthome"
     label = "Home Assistant"
     icon = "home-assistant"
     description = "Sensorer, brytere og tjenester fra Home Assistant."
@@ -39,6 +40,7 @@ class HomeAssistantSource(DataSource):
         self.cache_ttl = cache_ttl
         self.timeout = timeout
         self._cache = {}  # entity_id -> (value, fetched_at)
+        self._forecasts = {}  # (entity_id, kind) -> (forecast, fetched_at)
 
     def _require_configured(self):
         if not self.url or not self.token:
@@ -121,6 +123,22 @@ class HomeAssistantSource(DataSource):
             ts = datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
             points.append((ts, item.get("state")))
         return points
+
+    FORECAST_TTL = 1800
+
+    def get_forecast(self, entity_id, kind="daily"):
+        """The forecast of a weather entity through the weather.get_forecasts
+        service. (Home Assistant 2024.4 removed the `forecast` attribute the
+        entity used to carry; the service is the only way to read it now.)"""
+        key = (entity_id, kind)
+        cached = self._forecasts.get(key)
+        now = time.time()
+        if cached and now - cached[1] < self.FORECAST_TTL:
+            return cached[0]
+        body = self._request("/api/services/weather/get_forecasts?return_response", {"entity_id": entity_id, "type": kind}) or {}
+        forecast = ((body.get("service_response") or {}).get(entity_id) or {}).get("forecast") or []
+        self._forecasts[key] = (forecast, now)
+        return forecast
 
     def list_calendar_events(self, entity_id, start_iso, end_iso):
         """HA calendars: GET /api/calendars/<entity_id>?start=<ISO8601>&end=<ISO8601>."""

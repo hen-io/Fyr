@@ -22,6 +22,7 @@ class DataSource(ABC):
 
     id: str = ""
     label: str = ""
+    category: str = "system"  # smarthome | media | downloads | system - how the admin panel groups them
     icon: str = "puzzle"  # mdi icon name
     description: str = ""
     FIELDS: list = []  # [{name, label, kind: text|url|password|number|bool, ...}]
@@ -139,3 +140,80 @@ class MetricSource(DataSource):
         cutoff = time.time() - hours * 3600
         with self._lock:
             return [(ts, value) for ts, value in self._history.get(key, ()) if ts >= cutoff]
+
+
+class RestSource(MetricSource):
+    """Base for the common case: a service at a URL, reached with an API key,
+    a token or a username/password, that exposes numbers to show. A subclass
+    states its FIELDS, how to authenticate (headers()), how to prove the
+    connection works (probe()) and what to read (fetch_metrics())."""
+
+    AUTH_ERROR = "Ugyldig API-nøkkel"
+    VERIFY_FIELD = {"name": "verify_tls", "label": "Kontroller TLS-sertifikatet (slå av for selvsignert)", "kind": "bool", "default": True}
+
+    def __init__(self, values):
+        super().__init__()
+        self.values = dict(values or {})
+        self.url = (self.values.get("url") or "").rstrip("/")
+        self.verify = self.values.get("verify_tls", True) is not False
+
+    @classmethod
+    def from_values(cls, values, config):
+        return cls(values)
+
+    def is_configured(self):
+        return bool(self.url) and all(self.values.get(f["name"]) for f in self.FIELDS if f.get("required"))
+
+    def headers(self):
+        return {}
+
+    def _url(self, path, params=None):
+        from urllib.parse import urlencode
+
+        return self.url + path + (f"?{urlencode(params)}" if params else "")
+
+    def get(self, path, params=None, **kwargs):
+        from . import http
+
+        if not self.is_configured():
+            raise RuntimeError(f"{self.label} is not configured")
+        return http.get_json(self._url(path, params), headers=self.headers(), verify=self.verify, **kwargs)
+
+    def get_text(self, path, params=None, **kwargs):
+        from . import http
+
+        if not self.is_configured():
+            raise RuntimeError(f"{self.label} is not configured")
+        return http.get_text(self._url(path, params), headers=self.headers(), verify=self.verify, **kwargs)
+
+    def probe(self):
+        """Talk to the service once; return a short description (name and
+        version) or raise."""
+        raise NotImplementedError
+
+    def check(self):
+        from . import http
+
+        if not self.is_configured():
+            return {"connected": False, "detail": "URL/API-nøkkel mangler", "latency_ms": None}
+        started = time.time()
+        try:
+            detail = self.probe()
+        except Exception as err:
+            return {"connected": False, "detail": http.describe_failure(err, self.AUTH_ERROR), "latency_ms": None}
+        return {"connected": True, "detail": detail, "latency_ms": int((time.time() - started) * 1000)}
+
+
+def clamp_int(value, default, lo, hi):
+    try:
+        return min(hi, max(lo, int(value if value not in (None, "") else default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def list_item(title, subtitle=None, value=None, level=None, progress=None, icon=None, state=None):
+    """One row of the generic list widget (frontend: types/list.jsx).
+    level: ok | warn | bad | run | off - shown as a coloured dot.
+    state: down | pending | maintenance | stopped | paused - a word the
+    frontend shows in the viewer's language when there is no `value`."""
+    return {"title": str(title), "subtitle": subtitle, "value": value, "level": level, "progress": progress, "icon": icon, "state": state}

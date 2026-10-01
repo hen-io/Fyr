@@ -56,6 +56,11 @@ class Config:
     # false in .env if this backend is ever served over plain HTTP only.
     SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "true").lower() == "true"
 
+    # How many reverse proxies sit in front of the backend (see
+    # reqtools.client_address). 1 = only the container's own nginx; 2 = one
+    # more proxy (Nginx Proxy Manager, Traefik, Caddy ...) in front of that.
+    TRUSTED_PROXIES = int(os.environ.get("TRUSTED_PROXIES") or 1)
+
     # Hostname glob patterns /api/status is allowed to fetch. Without this,
     # that endpoint would be an open proxy: on a host-networked container,
     # anyone could make the backend fetch any URL on the LAN or internet.

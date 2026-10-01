@@ -112,6 +112,7 @@ class ArrSource(MetricSource):
 
 class SonarrSource(ArrSource):
     id = "sonarr"
+    category = "downloads"
     label = "Sonarr"
     icon = "television-classic"
     description = "TV-serier: kø, mangler, kommende episoder og diskplass."
@@ -154,6 +155,7 @@ class SonarrSource(ArrSource):
 
 class RadarrSource(ArrSource):
     id = "radarr"
+    category = "downloads"
     label = "Radarr"
     icon = "movie-open"
     description = "Filmer: kø, mangler, kommende utgivelser og diskplass."

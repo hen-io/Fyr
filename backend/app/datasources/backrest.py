@@ -39,6 +39,7 @@ class BackrestSource(MetricSource):
     list."""
 
     id = "backrest"
+    category = "system"
     label = "Backrest"
     icon = "backup-restore"
     description = "Sikkerhetskopier (restic): status, feil siste 30 dager, størrelse og siste operasjoner."

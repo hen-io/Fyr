@@ -3,17 +3,17 @@ import os
 
 from flask import Blueprint, current_app, jsonify, request, send_from_directory, session
 
-from ..auth import USERNAME_RE, change_password, current_user, load_users, require_role, save_users, verify_login
+from ..auth import USERNAME_RE, bump_session_epoch, change_password, current_user, load_users, require_role, save_users, session_epoch, verify_login
 from ..prefs import clear_prefs, get_prefs, set_prefs
+from ..imageio import ImageRejected, normalize_avatar
 from ..ratelimit import is_locked_out, record_failure, record_success
+from ..reqtools import client_address, json_object, secret, text
 
 auth_bp = Blueprint("auth", __name__)
 
-# Whatever browsers actually produce from an <input type="file" accept="image/*">
-# or a canvas .toBlob() - no re-encoding happens server-side (no image lib in
-# requirements.txt), so the upload is stored byte-for-byte under whichever of
-# these extensions matches its declared type.
-_AVATAR_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
+# What an upload may claim to be. The claim is only a first filter: the bytes
+# are decoded and re-encoded (imageio.normalize_avatar) before anything is kept.
+_AVATAR_TYPES = ("image/png", "image/jpeg", "image/webp", "image/gif")
 _MAX_AVATAR_BYTES = 2 * 1024 * 1024
 
 
@@ -21,13 +21,27 @@ def _avatars_dir(config):
     return os.path.join(config["DATA_DIR"], "avatars")
 
 
+def _start_session(username, role):
+    """A brand new session for this login: the old one's contents are dropped
+    AND its id is replaced, so an id planted in the browser beforehand (session
+    fixation) is worthless afterwards."""
+    session.clear()
+    regenerate = getattr(current_app.session_interface, "regenerate", None)
+    if regenerate:
+        regenerate(session)
+    session["username"] = username
+    session["role"] = role
+    session["epoch"] = session_epoch(username, current_app.config)
+
+
 @auth_bp.route("/api/login", methods=["POST"])
 def login():
-    body = request.get_json(silent=True) or {}
-    username = (body.get("username") or "").strip()
-    password = body.get("password") or ""
+    body = json_object()
+    username = text(body, "username", 128)
+    password = secret(body, "password")
+    address = client_address()
 
-    if not username or is_locked_out(username):
+    if not username or is_locked_out(username, address):
         # Same error either way - "locked out" and "wrong password" must
         # look identical to the client, or the lockout itself becomes a way
         # to confirm a username is real.
@@ -35,13 +49,11 @@ def login():
 
     role = verify_login(username, password)
     if role is None:
-        record_failure(username)
+        record_failure(username, address)
         return jsonify({"error": "invalid_credentials"}), 401
 
-    record_success(username)
-    session.clear()
-    session["username"] = username
-    session["role"] = role
+    record_success(username, address)
+    _start_session(username, role)
     return jsonify({"username": username, "role": role})
 
 
@@ -90,25 +102,35 @@ def reset_my_prefs():
 @require_role()
 def change_my_password():
     username = session["username"]
-    if is_locked_out(username):
+    address = client_address()
+    if is_locked_out(username, address):
         # Same lockout mechanism as login - someone with a hijacked session
         # (or a shared machine) shouldn't get unlimited guesses at the
         # current password just because there's no username to enumerate.
         return jsonify({"error": "too_many_attempts"}), 429
 
-    body = request.get_json(silent=True) or {}
-    current_password = body.get("current_password") or ""
-    new_password = body.get("new_password") or ""
+    body = json_object()
+    current_password = secret(body, "current_password")
+    new_password = secret(body, "new_password")
 
     if verify_login(username, current_password) is None:
-        record_failure(username)
+        record_failure(username, address)
         return jsonify({"error": "wrong_current_password"}), 401
 
     if len(new_password) < 8:
         return jsonify({"error": "password_too_short"}), 400
 
-    record_success(username)
-    change_password(username, new_password, current_app.config)
+    record_success(username, address)
+    # Every other session of this account ends here; this one carries on.
+    session["epoch"] = change_password(username, new_password, current_app.config)
+    return jsonify({"ok": True})
+
+
+@auth_bp.route("/api/me/sessions", methods=["DELETE"])
+@require_role()
+def sign_out_everywhere_else():
+    """Ends every other session of this account (a lost phone, a shared PC)."""
+    session["epoch"] = bump_session_epoch(session["username"], current_app.config)
     return jsonify({"ok": True})
 
 
@@ -116,10 +138,11 @@ def change_my_password():
 @require_role()
 def update_my_profile():
     username = session["username"]
-    body = request.get_json(silent=True) or {}
-    display_name = (body.get("display_name") or "").strip()
-    if len(display_name) > 60:
+    body = json_object()
+    raw = body.get("display_name")
+    if raw is not None and (not isinstance(raw, str) or len(raw.strip()) > 60):
         return jsonify({"error": "display_name_too_long"}), 400
+    display_name = (raw or "").strip()
 
     users = load_users(current_app.config)
     users[username]["display_name"] = display_name or None
@@ -139,23 +162,26 @@ def upload_my_avatar():
     if not file:
         return jsonify({"error": "no_file"}), 400
 
-    ext = _AVATAR_TYPES.get(file.mimetype)
-    if not ext:
+    if file.mimetype not in _AVATAR_TYPES:
         return jsonify({"error": "unsupported_type"}), 400
 
     data = file.read(_MAX_AVATAR_BYTES + 1)
     if len(data) > _MAX_AVATAR_BYTES:
         return jsonify({"error": "file_too_large"}), 400
+    # Decoded and re-encoded rather than stored as sent: what ends up on disk
+    # is always a real, small picture - never HTML with an image's file name,
+    # and without the camera/location data a photo may carry.
+    try:
+        data = normalize_avatar(data)
+    except ImageRejected:
+        return jsonify({"error": "not_an_image"}), 400
+    ext = "webp"
 
     avatars_dir = _avatars_dir(current_app.config)
     os.makedirs(avatars_dir, exist_ok=True)
 
     users = load_users(current_app.config)
     old_ext = users.get(username, {}).get("avatar_ext")
-    # A different extension than last time (png -> jpg, say) would
-    # otherwise leave the old file sitting there under its own name
-    # forever - nothing points at it once avatar_ext changes below, but
-    # it'd still be on disk.
     if old_ext and old_ext != ext:
         old_path = os.path.join(avatars_dir, f"{username}.{old_ext}")
         if os.path.exists(old_path):
@@ -196,4 +222,6 @@ def get_avatar(username):
     ext = users.get(username, {}).get("avatar_ext")
     if not ext or not USERNAME_RE.match(username):
         return jsonify({"error": "not_found"}), 404
-    return send_from_directory(_avatars_dir(current_app.config), f"{username}.{ext}")
+    response = send_from_directory(_avatars_dir(current_app.config), f"{username}.{ext}")
+    response.headers["Content-Security-Policy"] = "sandbox; default-src 'none'; img-src 'self'"
+    return response

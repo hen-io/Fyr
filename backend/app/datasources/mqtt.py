@@ -18,6 +18,7 @@ class MqttSource(DataSource):
     for, and is lost on restart, unlike Home Assistant's own recorder."""
 
     id = "mqtt"
+    category = "smarthome"
     label = "MQTT"
     icon = "access-point-network"
     description = "Sensorer og styring via en MQTT-megler."

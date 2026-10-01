@@ -16,6 +16,7 @@ _ALLOWED = {
     "palette": str,
     "theme": str,
     "tileFxMode": str,
+    "tileBadgeStyle": str,
     "performance": str,
     "logoStrokeWidth": (int, float),
     "logoStrokeColor": str,

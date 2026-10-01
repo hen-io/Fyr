@@ -22,7 +22,7 @@ LOGO_FRACTION = 0.64  # logo box as a share of the tile side
 LOGO_LIFT = 0.012  # the logo sits a touch above centre (the tile label is below)
 UNIT = SIZE / 180.0  # image px per CSS px, for the outline width
 
-RENDER_VERSION = 4  # bump when the drawing changes: it is part of every cache key and image URL
+RENDER_VERSION = 5  # bump when the drawing changes: it is part of every cache key and image URL
 
 STROKE_COLORS = ("ink", "accent", "white", "black", "auto")
 
@@ -106,46 +106,119 @@ def _alpha_composite_solid(base, colour, mask):
     return Image.alpha_composite(base, layer)
 
 
-def render_face(icon, radius_pct=0):
+BADGE_STYLES = ("glass", "gloss", "frosted", "deep", "flat")
+
+
+def _rounded_mask(size, radius_pct):
+    scale = 4
+    big = Image.new("L", (size * scale, size * scale), 0)
+    ImageDraw.Draw(big).rounded_rectangle((0, 0, size * scale - 1, size * scale - 1), radius=size * scale * max(radius_pct, 0) / 100, fill=255)
+    return big.resize((size, size), Image.LANCZOS)
+
+
+def _scale(mask, factor):
+    return mask.point(lambda v: int(_clamp(v * factor, 0, 255)))
+
+
+def _vertical(size, top, bottom):
+    """L gradient from `top` (0-1) at the top edge to `bottom` at the bottom edge."""
+    ramp = Image.linear_gradient("L").resize((size, size), Image.BILINEAR)  # 0 at top -> 255 at bottom
+    return ramp.point(lambda v: int(255 * _clamp(top + (bottom - top) * v / 255, 0, 1)))
+
+
+def _ellipse(size, box, blur):
+    layer = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(layer).ellipse(tuple(v * size for v in box), fill=255)
+    return layer.filter(ImageFilter.GaussianBlur(size * blur)) if blur else layer
+
+
+def _lighten(rgb, amount):
+    return tuple(min(255, int(c + (255 - c) * amount)) for c in rgb)
+
+
+def _inner_edge(mask, blur):
+    """Brightest along the inside of the shape's edge, fading inwards: for bevel shading."""
+    outside = ImageOps.invert(mask).filter(ImageFilter.GaussianBlur(blur))
+    return ImageChops.multiply(outside, mask)
+
+
+def _rim(mask, width):
+    """A thin line just inside the shape's edge."""
+    shrunk = mask.filter(ImageFilter.MinFilter(width * 2 + 1))
+    return ImageChops.subtract(mask, shrunk).filter(ImageFilter.GaussianBlur(0.7))
+
+
+def render_face(icon, radius_pct=0, style="glass"):
+    """The tile background. All styles take their colours from the logo only and
+    are cut to the tile's rounded shape; most are partly see-through so the
+    page's blurred glass shows through."""
     (c1, c2, c3), _ = palette(icon)
     size = SIZE
+    mask = _rounded_mask(size, radius_pct)
+
     gradient_size = int(size * 1.45)
     radial = Image.radial_gradient("L").resize((gradient_size, gradient_size), Image.BICUBIC)
     left = round(gradient_size / 2 - size * 0.5)
-    top = round(gradient_size / 2 - size * 0.47)
-    gray = radial.crop((left, top, left + size, top + size))
-    face = ImageOps.colorize(gray, black=c1, mid=c2, white=c3, midpoint=105).convert("RGBA")
+    top = round(gradient_size / 2 - size * 0.44)
+    gray = radial.crop((left, top, left + size, top + size))  # 0 in the middle -> 255 at the rim
 
-    # soft edge vignette for depth
-    vignette = gray.point(lambda v: int(_clamp((v - 150) * 1.5, 0, 255) * 0.32))
-    face = _alpha_composite_solid(face, (0, 0, 0), vignette)
+    if style == "flat":
+        face = ImageOps.colorize(gray, black=c1, mid=c2, white=c3, midpoint=120).convert("RGBA")
+        face.putalpha(mask)
+        return face
 
-    # bounce light from below, in the logo's own (lighter) colour
-    bounce = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(bounce).ellipse((size * 0.08, size * 0.72, size * 0.92, size * 1.35), fill=255)
-    bounce = bounce.filter(ImageFilter.GaussianBlur(size * 0.07)).point(lambda v: int(v * 0.35))
-    light = tuple(min(255, int(c * 1.5) + 18) for c in c1)
-    face = _alpha_composite_solid(face, light, bounce)
+    if style == "gloss":
+        # Opaque candy: lit from above, a big bright glare over the top half
+        body = ImageOps.colorize(_vertical(size, 0, 1), black=_lighten(c1, 0.12), mid=c2, white=c3, midpoint=150).convert("RGBA")
+        body.putalpha(mask)
+        face = body
+        face = _alpha_composite_solid(face, (0, 0, 0), _scale(_inner_edge(mask, size * 0.05), 0.45))
+        glare = _ellipse(size, (-0.3, -0.7, 1.3, 0.46), 0.008)
+        glare = ImageChops.multiply(glare, _vertical(size, 0.5, 0.05))
+        face = _alpha_composite_solid(face, (255, 255, 255), ImageChops.multiply(glare, mask))
+        face = _alpha_composite_solid(face, _lighten(c1, 0.5), _scale(ImageChops.multiply(_ellipse(size, (0.12, 0.78, 0.88, 1.2), 0.06), mask), 0.5))
+        face = _alpha_composite_solid(face, (255, 255, 255), ImageChops.multiply(_rim(mask, 2), _vertical(size, 0.75, 0.15)))
+        return face
 
-    # glossy highlight across the top, fading downwards (the "glass" sheen)
-    gloss = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(gloss).ellipse((-size * 0.3, -size * 0.85, size * 1.3, size * 0.4), fill=255)
-    gloss = gloss.filter(ImageFilter.GaussianBlur(size * 0.045))
-    fade = ImageOps.invert(Image.linear_gradient("L").resize((size, size), Image.BILINEAR))
-    gloss = ImageChops.multiply(gloss, fade).point(lambda v: int(v * 0.12))
-    face = _alpha_composite_solid(face, (255, 255, 255), gloss)
+    # Translucent styles: tinted glass whose opacity rises towards the edges
+    if style == "frosted":
+        tint, alpha_mid, alpha_edge, shine = _lighten(c1, 0.25), 0.26, 0.48, 0.42
+    elif style == "deep":
+        tint, alpha_mid, alpha_edge, shine = c3, 0.72, 0.9, 0.22
+    else:  # glass
+        tint, alpha_mid, alpha_edge, shine = None, 0.62, 0.88, 0.36
 
-    # thin bright rim along the top edge and dark along the bottom
-    rim = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(rim).rectangle((0, 0, size, size * 0.018), fill=70)
-    face = _alpha_composite_solid(face, (255, 255, 255), rim.filter(ImageFilter.GaussianBlur(size * 0.006)))
-    face = face.convert("RGBA")
-    if radius_pct > 0:
-        # Rounded corners baked into the picture, the same percentage the tile uses in CSS
-        scale = 4
-        mask = Image.new("L", (size * scale, size * scale), 0)
-        ImageDraw.Draw(mask).rounded_rectangle((0, 0, size * scale - 1, size * scale - 1), radius=size * scale * radius_pct / 100, fill=255)
-        face.putalpha(mask.resize((size, size), Image.LANCZOS))
+    if tint is None:
+        colour = ImageOps.colorize(gray, black=c1, mid=c2, white=c3, midpoint=95)
+    else:
+        colour = Image.new("RGB", (size, size), tint)
+    alpha = gray.point(lambda v: int(255 * (alpha_mid + (alpha_edge - alpha_mid) * (v / 255) ** 1.6)))
+    face = colour.convert("RGBA")
+    face.putalpha(ImageChops.multiply(alpha, mask))
+
+    if style == "frosted":
+        face = _alpha_composite_solid(face, (255, 255, 255), _scale(ImageChops.multiply(_vertical(size, 0.22, 0.04), mask), 1))
+    if style == "deep":
+        # a glow of the logo colour rising from the bottom, like light inside dark glass
+        glow = ImageChops.multiply(_ellipse(size, (-0.1, 0.45, 1.1, 1.45), 0.09), mask)
+        face = _alpha_composite_solid(face, _lighten(c1, 0.15), _scale(glow, 0.85))
+
+    # 3D: darker bevel along the lower inside edge, lighter along the upper one
+    bevel = _inner_edge(mask, size * 0.045)
+    face = _alpha_composite_solid(face, c3 if style != "frosted" else (0, 0, 0), ImageChops.multiply(bevel, _vertical(size, 0.0, 0.85)))
+    face = _alpha_composite_solid(face, (255, 255, 255), ImageChops.multiply(bevel, _vertical(size, 0.55 * shine / 0.36, 0.0)))
+
+    # caustic: light that went through the glass pooling near the bottom, in the logo's hue
+    caustic = ImageChops.multiply(_ellipse(size, (0.18, 0.7, 0.82, 1.05), 0.07), mask)
+    face = _alpha_composite_solid(face, _lighten(c1, 0.55), _scale(caustic, 0.4 if style != "deep" else 0.25))
+
+    # specular: a curved band across the top, sharp at its lower edge and fading upwards
+    band = _ellipse(size, (-0.45, -1.0, 1.45, 0.42), 0.012)
+    band = ImageChops.multiply(band, _vertical(size, shine * 1.25, 0.0))
+    face = _alpha_composite_solid(face, (255, 255, 255), ImageChops.multiply(band, mask))
+
+    # crisp rim: bright on top, fading down the sides
+    face = _alpha_composite_solid(face, (255, 255, 255), ImageChops.multiply(_rim(mask, 2), _vertical(size, 0.9, 0.18)))
     return face
 
 
@@ -235,7 +308,7 @@ def _trim_cache(cache_dir):
         pass
 
 
-def get_or_render(cache_dir, key, icon_path, kind, tint, stroke_width, stroke_color, mode, accent, radius_pct=0):
+def get_or_render(cache_dir, key, icon_path, kind, tint, stroke_width, stroke_color, mode, accent, radius_pct=0, style="glass"):
     """The rendered WebP for `key`, from the disk cache or freshly drawn."""
     os.makedirs(cache_dir, exist_ok=True)
     path = cache_path(cache_dir, key)
@@ -249,7 +322,7 @@ def get_or_render(cache_dir, key, icon_path, kind, tint, stroke_width, stroke_co
                 return handle.read()
         icon = load_icon(icon_path)
         if kind == "face":
-            data = _encode(render_face(icon, radius_pct), "face")
+            data = _encode(render_face(icon, radius_pct, style), "face")
         else:
             data = _encode(render_logo(icon, tint, stroke_width, stroke_color, mode, accent), "logo")
         tmp = path + ".tmp"

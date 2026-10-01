@@ -15,6 +15,8 @@ defaults_bp = Blueprint("defaults", __name__)
 _ALLOWED = {
     "palette": str,
     "theme": str,
+    "splashMode": str,
+    "splashSeconds": (int, float),
     "tileFxMode": str,
     "tileBadgeStyle": str,
     "tileBadgeColor": str,

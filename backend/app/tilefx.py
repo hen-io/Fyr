@@ -22,7 +22,7 @@ LOGO_FRACTION = 0.64  # logo box as a share of the tile side
 LOGO_LIFT = 0.012  # the logo sits a touch above centre (the tile label is below)
 UNIT = SIZE / 180.0  # image px per CSS px, for the outline width
 
-RENDER_VERSION = 9  # bump when the drawing changes: it is part of every cache key and image URL
+RENDER_VERSION = 10  # bump when the drawing changes: it is part of every cache key and image URL
 
 STROKE_COLORS = ("ink", "accent", "white", "black", "auto")
 
@@ -55,11 +55,10 @@ def load_icon(path):
     return image.convert("RGBA")
 
 
-def dominant_hue(icon):
-    """(hue 0-1, saturation) of the logo's main vivid colour, or None for a
-    grey/black/white logo. Saturated, opaque pixels vote for their hue bin."""
+def _hue_bins(icon):
+    """Saturated, opaque pixels vote for their hue (12 bins): [weight, hue*w, sat*w]."""
     small = icon.resize((48, 48), Image.LANCZOS)
-    bins = [[0.0, 0.0, 0.0] for _ in range(12)]  # weight, hue*weight, sat*weight
+    bins = [[0.0, 0.0, 0.0] for _ in range(12)]
     for r, g, b, a in small.getdata():
         if a < 128:
             continue
@@ -71,10 +70,30 @@ def dominant_hue(icon):
         slot[0] += weight
         slot[1] += h * weight
         slot[2] += s * weight
-    best = max(bins, key=lambda slot: slot[0])
+    return bins
+
+
+def dominant_hue(icon):
+    """(hue 0-1, saturation) of the logo's main vivid colour, or None for a
+    grey/black/white logo."""
+    best = max(_hue_bins(icon), key=lambda slot: slot[0])
     if best[0] <= 0:
         return None
     return best[1] / best[0], best[2] / best[0]
+
+
+def secondary_hue(icon):
+    """The logo's second colour - only when it is clearly there (at least a
+    quarter as strong as the main one and a different hue), else None."""
+    bins = _hue_bins(icon)
+    first = max(range(12), key=lambda i: bins[i][0])
+    if bins[first][0] <= 0:
+        return None
+    others = [i for i in range(12) if min((i - first) % 12, (first - i) % 12) >= 2 and bins[i][0] >= bins[first][0] * 0.25]
+    if not others:
+        return None
+    second = bins[max(others, key=lambda i: bins[i][0])]
+    return second[1] / second[0], second[2] / second[0]
 
 
 def average_grey(icon):
@@ -107,7 +126,7 @@ def _alpha_composite_solid(base, colour, mask):
     return Image.alpha_composite(base, layer)
 
 
-BADGE_STYLES = ("glass", "bubble", "crystal", "aurora", "duo", "neon", "gloss", "frosted", "deep", "flat")
+BADGE_STYLES = ("glass", "bubble", "crystal", "duo", "neon", "gloss", "frosted", "deep", "flat")
 
 _SS = 3  # supersampling for the rounded shapes
 
@@ -203,52 +222,39 @@ def render_face(icon, radius_pct=0, style="glass"):
         colour = ImageOps.colorize(_vertical(size, 0, 1), black=_lighten(c1, 0.22), mid=c1, white=c3, midpoint=120)
         alpha = Image.new("L", (size, size), 255)
         shine = 1.5
-    elif style == "duo":  # two neighbouring hues of the logo colour, corner to corner
-        if hue is None:
-            first, last = _lighten(c1, 0.3), c3
-        else:
-            h, s = hue
-            s = _clamp(s * 1.15, 0.65, 1.0)
-            first, last = _hls_rgb(h - 0.07, 0.56, s), _hls_rgb(h + 0.08, 0.2, s)
-        colour = ImageOps.colorize(diagonal, black=first, mid=c1, white=last, midpoint=120)
-        alpha = gray.point(lambda v: int(255 * (0.74 + 0.2 * (v / 255) ** 1.5)))
+    elif style == "duo":  # the logo's own two main colours, corner to corner
+        other = secondary_hue(icon)
+        if hue is not None and other is not None:
+            last = _hls_rgb(other[0], 0.46, _clamp(other[1] * 1.3, 0.8, 1.0))
+            colour = ImageOps.colorize(diagonal, black=_lighten(c1, 0.12), mid=c1, white=last, midpoint=110)
+        else:  # a one-colour logo: two tones of that colour
+            colour = ImageOps.colorize(diagonal, black=_lighten(c1, 0.3), mid=c1, white=c3, midpoint=120)
+        alpha = Image.new("L", (size, size), 255)
     elif style == "frosted":  # pale, mostly haze
         colour = Image.new("RGB", (size, size), _lighten(c1, 0.45))
-        alpha = gray.point(lambda v: int(255 * (0.2 + 0.26 * (v / 255) ** 1.5)))
+        alpha = gray.point(lambda v: int(255 * (0.5 + 0.3 * (v / 255) ** 1.5)))
         shine = 1.2
     elif style == "deep":  # dark glass with the colour glowing up from below
         colour = ImageOps.colorize(_vertical(size, 0, 1), black=c3, mid=c2, white=c1, midpoint=140)
-        alpha = gray.point(lambda v: int(255 * (0.7 + 0.22 * (v / 255) ** 1.5)))
+        alpha = Image.new("L", (size, size), 255)
         shine = 0.7
     elif style == "bubble":  # a droplet: lit near the top-left, curving away into shade
         ball = _radial(size, 0.34, 0.28, 0.95)
         colour = ImageOps.colorize(ball, black=_lighten(c1, 0.42), mid=c1, white=c3, midpoint=95)
-        alpha = gray.point(lambda v: int(255 * (0.78 + 0.18 * (v / 255) ** 1.5)))
+        alpha = Image.new("L", (size, size), 255)
         shine = 1.25
     elif style == "crystal":  # two cut planes meeting on the diagonal
         colour = ImageOps.colorize(diagonal, black=_lighten(c1, 0.3), mid=c1, white=c3, midpoint=128)
-        alpha = gray.point(lambda v: int(255 * (0.72 + 0.22 * (v / 255) ** 1.5)))
+        alpha = Image.new("L", (size, size), 255)
         shine = 1.1
-    elif style == "aurora":  # three neighbouring hues melting into each other
-        if hue is None:
-            spots = [(_lighten(c1, 0.35), 0.2, 0.25), (c2, 0.82, 0.3), (c1, 0.5, 0.9)]
-        else:
-            h, s = hue
-            s = _clamp(s * 1.3, 0.82, 1.0)
-            spots = [(_hls_rgb(h - 0.1, 0.6, s), 0.18, 0.22), (_hls_rgb(h + 0.11, 0.52, s), 0.85, 0.3), (_hls_rgb(h + 0.02, 0.6, s), 0.5, 0.92)]
-        colour = Image.new("RGB", (size, size), c2)
-        for rgb, cx, cy in spots:
-            spot = _radial(size, cx, cy, 0.62).point(lambda v: 255 - v)
-            colour.paste(Image.new("RGB", (size, size), rgb), (0, 0), spot)
-        alpha = gray.point(lambda v: int(255 * (0.8 + 0.16 * (v / 255) ** 1.5)))
     elif style == "neon":  # near-black glass, the colour lives in a glowing edge
         dark = tuple(int(c * 0.22) for c in c3)
         colour = ImageOps.colorize(gray, black=tuple(int(c * 0.55) for c in c3), mid=dark, white=dark, midpoint=90)
-        alpha = gray.point(lambda v: int(255 * (0.74 + 0.2 * (v / 255) ** 1.5)))
+        alpha = Image.new("L", (size, size), 255)
         shine = 0.55
     else:  # glass: light enters top-left, the colour deepens towards bottom-right
         colour = ImageOps.colorize(diagonal, black=_lighten(c1, 0.2), mid=c1, white=c3, midpoint=105)
-        alpha = gray.point(lambda v: int(255 * (0.66 + 0.28 * (v / 255) ** 1.6)))
+        alpha = Image.new("L", (size, size), 255)
 
     face = colour.convert("RGBA")
     face.putalpha(ImageChops.multiply(alpha, mask))
@@ -261,26 +267,37 @@ def render_face(icon, radius_pct=0, style="glass"):
     lens = ImageChops.multiply(_ellipse(size, (0.2, 0.16, 0.8, 0.76), 0.1), mask)
     face = _alpha_composite_solid(face, _lighten(c1, 0.5), _scale(lens, 0.16))
 
-    # thickness: an even band inside the edge, dark where the light leaves
-    # (bottom-right) and bright where it enters (top-left)
-    bevel = _bevel(size, radius_pct, mask, size * 0.05)
+    # --- thickness: the glass has an edge you can see into ----------------------
+    bevel = _bevel(size, radius_pct, mask, size * 0.06)
     leaving = diagonal.point(lambda v: int(255 * _clamp((v - 95) / 160, 0, 1)))
     entering = diagonal.point(lambda v: int(255 * _clamp((150 - v) / 150, 0, 1)))
-    face = _alpha_composite_solid(face, c3, _scale(ImageChops.multiply(bevel, leaving), 0.5))
-    face = _alpha_composite_solid(face, (255, 255, 255), _scale(ImageChops.multiply(bevel, entering), 0.34 * shine))
+    corner = diagonal.point(lambda v: int(255 * _clamp((115 - v) / 115, 0, 1) ** 2))  # top-left only
+    # shade where the light leaves (bottom-right), light where it enters (top-left)
+    face = _alpha_composite_solid(face, c3, _scale(ImageChops.multiply(bevel, leaving), 0.6))
+    face = _alpha_composite_solid(face, (255, 255, 255), _scale(ImageChops.multiply(bevel, entering), 0.5 * shine))
+    # the light that went through comes out again as a bright line of the logo's
+    # own colour along the lower-right inside edge
+    caustic = _outline(size, radius_pct, size * 0.02, size * 0.028).filter(ImageFilter.GaussianBlur(size * 0.009))
+    face = _alpha_composite_solid(face, _lighten(c1, 0.7), _scale(ImageChops.multiply(ImageChops.multiply(caustic, leaving), mask), 0.75))
 
-    # soft glare over the upper part (no hard lower edge)
-    glare = ImageChops.multiply(_ellipse(size, (-0.3, -0.75, 1.3, 0.5), 0.045), _vertical(size, 0.36 * shine, 0.0))
+    # --- surface: a wet glare over the top -------------------------------------
+    glare = ImageChops.multiply(_ellipse(size, (-0.3, -0.75, 1.3, 0.5), 0.045), _vertical(size, 0.4 * shine, 0.0))
     face = _alpha_composite_solid(face, (255, 255, 255), ImageChops.multiply(glare, mask))
+    sheen = ImageChops.multiply(_ellipse(size, (-0.55, -1.25, 1.55, 0.36), 0.008), _vertical(size, 0.2 * shine, 0.02))
+    face = _alpha_composite_solid(face, (255, 255, 255), ImageChops.multiply(sheen, mask))
 
-    # a crisp second highlight just inside the top edge - the glass's inner surface
+    # --- edge: dark hairline (the gap between rim and body), then the inner
+    # surface catching light across the top, a hard specular arc in the lit
+    # corner, and the rim itself
+    hairline = _outline(size, radius_pct, size * 0.005, size * 0.011).filter(ImageFilter.GaussianBlur(size * 0.002))
+    face = _alpha_composite_solid(face, (0, 0, 0), _scale(ImageChops.multiply(hairline, mask), 0.24))
     inner_line = _outline(size, radius_pct, size * 0.008, size * 0.03).filter(ImageFilter.GaussianBlur(size * 0.003))
     top_only = _vertical(size, 1.6, -0.9)  # full at the top, gone by about two thirds down
-    face = _alpha_composite_solid(face, (255, 255, 255), _scale(ImageChops.multiply(inner_line, top_only), 0.3 * shine))
-
-    # the rim itself: one thin even line, bright where light enters and (a little) where it leaves
+    face = _alpha_composite_solid(face, (255, 255, 255), _scale(ImageChops.multiply(inner_line, top_only), 0.4 * shine))
+    arc = _outline(size, radius_pct, size * 0.016, size * 0.018).filter(ImageFilter.GaussianBlur(size * 0.004))
+    face = _alpha_composite_solid(face, (255, 255, 255), _scale(ImageChops.multiply(ImageChops.multiply(arc, corner), mask), 0.85 * min(shine, 1.2)))
     rim = _outline(size, radius_pct, size * 0.006)
-    two_ended = diagonal.point(lambda v: int(255 * (0.16 + 0.74 * (1 - v / 255) ** 2 + 0.3 * (v / 255) ** 3)))
+    two_ended = diagonal.point(lambda v: int(255 * (0.2 + 0.74 * (1 - v / 255) ** 2 + 0.36 * (v / 255) ** 3)))
     face = _alpha_composite_solid(face, (255, 255, 255), ImageChops.multiply(ImageChops.multiply(rim, two_ended), mask))
 
     if style == "bubble":

@@ -22,6 +22,7 @@ SETTING_DEFAULTS = {
     "tileTint": "off",
     "tileBadgeStyle": "glass",
     "tileBadgeColor": "diagonal",
+    "tileBadgeVibrancy": 60,
     "roundness": 20,
     "logoStrokeWidth": 0,
     "logoStrokeColor": "ink",
@@ -126,7 +127,8 @@ def urls_for(app, chosen, icons_dir, secret):
         logo["m"] = "light" if chosen["colorMode"] == "light" else "dark"
     if color == "accent":
         logo["ac"] = PALETTE_ACCENTS.get(chosen["palette"], PALETTE_ACCENTS["ember"])
-    face = {"v": version, "r": radius, "s": chosen["tileBadgeStyle"], "c": chosen["tileBadgeColor"]}
+    vibrancy = int(max(0, min(100, round(float(chosen["tileBadgeVibrancy"]) / 5) * 5)))
+    face = {"v": version, "r": radius, "s": chosen["tileBadgeStyle"], "c": chosen["tileBadgeColor"], "vb": vibrancy}
     return {
         "face": _url(secret, "face", icon, face) if tint else None,
         "logo": _url(secret, "logo", icon, logo),

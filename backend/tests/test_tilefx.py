@@ -72,6 +72,25 @@ def test_every_style_and_colour_renders():
         assert tilefx.render_face(icon, 20, "glass", colour).mode == "RGBA"
     grey = Image.open(io.BytesIO(make_png(64, (128, 128, 128)))).convert("RGBA")
     assert tilefx.render_face(grey, 0, "glass", "duo").size == (tilefx.SIZE, tilefx.SIZE)
+
+
+def _spread(rgb):
+    return max(rgb) - min(rgb)
+
+
+def test_vibrancy_fades_and_strengthens_the_colour(admin, anon):
+    icon = Image.open(io.BytesIO(make_png(64, (200, 60, 60)))).convert("RGBA")
+    middle = (tilefx.SIZE // 2, tilefx.SIZE // 2)
+    dull, normal, strong = (tilefx.render_face(icon, 20, "flat", "solid", level).getpixel(middle)[:3] for level in (0, 60, 100))
+    assert _spread(dull) < _spread(normal) <= _spread(strong) and _spread(dull) < 60
+    assert tilefx.render_face(icon, 20, "flat", "solid").getpixel(middle)[:3] == normal  # 60 is the built-in look
+    assert sum(strong) > sum(normal)
+
+    _setup(admin, {"tileTint": "on", "tileBadgeVibrancy": 87})
+    assert "vb=85" in _fx(anon)["face"]  # stepped, so a slider drag does not draw a hundred variants
+    assert anon.get(_fx(anon)["face"]).status_code == 200
+    assert anon.get(_fx(anon)["face"].replace("vb=85", "vb=100")).status_code == 404
+    admin.put("/api/defaults", json={"defaults": {}})
     for color in tilefx.STROKE_COLORS:
         assert tilefx.render_logo(icon, True, 3, color, "dark", "ffb347").mode == "RGBA"
 

@@ -20,6 +20,7 @@ _ALLOWED = {
     "tileFxMode": str,
     "tileBadgeStyle": str,
     "tileBadgeColor": str,
+    "tileBadgeVibrancy": int,
     "windowOpacity": int,
     "badgeOpacity": int,
     "performance": str,

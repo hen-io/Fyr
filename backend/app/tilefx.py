@@ -111,15 +111,29 @@ def average_grey(icon):
     return (total / count / 255) if count else 0.5
 
 
-def palette(icon):
+DEFAULT_VIBRANCY = 60
+
+
+def _vivid(saturation, vibrancy):
+    """(saturation, extra lightness) for a colour at `vibrancy` 0-100: 60 is the
+    logo colour as it is, below that it fades towards grey, above it goes to
+    full saturation and a little brighter."""
+    level = _clamp(vibrancy, 0, 100) / 100
+    if level <= 0.6:
+        return saturation * (0.12 + 0.88 * level / 0.6), 0.0
+    boost = (level - 0.6) / 0.4
+    return saturation + (1 - saturation) * boost, 0.07 * boost
+
+
+def palette(icon, vibrancy=DEFAULT_VIBRANCY):
     """Three colours from the logo's own hue: vivid centre, darker middle, deep edge."""
     hue = dominant_hue(icon)
     if hue is None:
         grey = _clamp(average_grey(icon), 0.25, 0.75)
         return tuple(_hls_rgb(0, _clamp(grey * f, 0, 1), 0) for f in (1.1, 0.8, 0.5)), None
     h, s = hue
-    s = _clamp(s * 1.3, 0.82, 1.0)
-    return (_hls_rgb(h, 0.56, s), _hls_rgb(h + 0.012, 0.43, s), _hls_rgb(h - 0.012, 0.27, s)), hue
+    s, lift = _vivid(_clamp(s * 1.3, 0.82, 1.0), vibrancy)
+    return (_hls_rgb(h, 0.56 + lift, s), _hls_rgb(h + 0.012, 0.43 + lift, s), _hls_rgb(h - 0.012, 0.27 + lift, s)), hue
 
 
 def _alpha_composite_solid(base, colour, mask):
@@ -202,11 +216,11 @@ def _bevel(size, radius_pct, mask, depth):
     return ImageChops.subtract(mask, inner)
 
 
-def render_face(icon, radius_pct=0, style="glass", colour_style="diagonal"):
+def render_face(icon, radius_pct=0, style="glass", colour_style="diagonal", vibrancy=DEFAULT_VIBRANCY):
     """The tile background: `colour_style` decides how the logo's own colours
     are laid out, `style` decides the 3D shading on top. The shape is the
     tile's rounded square."""
-    (c1, c2, c3), hue = palette(icon)
+    (c1, c2, c3), hue = palette(icon, vibrancy)
     size = SIZE
     mask = _shape(size, radius_pct)
     diagonal = _diagonal(size)
@@ -228,7 +242,8 @@ def render_face(icon, radius_pct=0, style="glass", colour_style="diagonal"):
     elif colour_style == "duo":  # the logo's own two main colours, corner to corner
         other = secondary_hue(icon)
         if hue is not None and other is not None:
-            last = _hls_rgb(other[0], 0.46, _clamp(other[1] * 1.3, 0.8, 1.0))
+            other_s, other_lift = _vivid(_clamp(other[1] * 1.3, 0.8, 1.0), vibrancy)
+            last = _hls_rgb(other[0], 0.46 + other_lift, other_s)
             colour = ImageOps.colorize(diagonal, black=_lighten(c1, 0.12), mid=c1, white=last, midpoint=110)
         else:  # a one-colour logo: two tones of that colour
             colour = ImageOps.colorize(diagonal, black=_lighten(c1, 0.3), mid=c1, white=c3, midpoint=120)
@@ -454,7 +469,7 @@ def _trim_cache(cache_dir):
         pass
 
 
-def get_or_render(cache_dir, key, icon_path, kind, tint, stroke_width, stroke_color, mode, accent, radius_pct=0, style="glass", colour_style="diagonal"):
+def get_or_render(cache_dir, key, icon_path, kind, tint, stroke_width, stroke_color, mode, accent, radius_pct=0, style="glass", colour_style="diagonal", vibrancy=DEFAULT_VIBRANCY):
     """The rendered WebP for `key`, from the disk cache or freshly drawn."""
     os.makedirs(cache_dir, exist_ok=True)
     path = cache_path(cache_dir, key)
@@ -468,7 +483,7 @@ def get_or_render(cache_dir, key, icon_path, kind, tint, stroke_width, stroke_co
                 return handle.read()
         icon = load_icon(icon_path)
         if kind == "face":
-            data = _encode(render_face(icon, radius_pct, style, colour_style), "face")
+            data = _encode(render_face(icon, radius_pct, style, colour_style, vibrancy), "face")
         else:
             data = _encode(render_logo(icon, tint, stroke_width, stroke_color, mode, accent), "logo")
         tmp = path + ".tmp"

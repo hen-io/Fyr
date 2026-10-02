@@ -74,6 +74,32 @@ def test_every_style_and_colour_renders():
     assert tilefx.render_face(grey, 0, "glass", "duo").size == (tilefx.SIZE, tilefx.SIZE)
 
 
+SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#18a058"/><circle cx="5" cy="5" r="2" fill="rgb(24, 160, 88)"/><path d="M0 0h1" stroke="#fff"/></svg>'
+
+
+def test_svg_icons_get_a_badge_from_their_own_colours(admin, anon, app):
+    path = os.path.join(app.config["CONFIG_DIR"], "icons", "logo.svg")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as handle:
+        handle.write(SVG)
+    (c1, _c2, _c3), hue = tilefx.palette(tilefx.load_icon(path))
+    assert hue is not None and c1[1] > c1[0] and c1[1] > c1[2]  # green, like the logo
+
+    admin.put("/api/apps", json={"apps": [{"title": "Vector", "url": "https://v.example", "icon": "logo.svg"}]})
+    admin.put("/api/defaults", json={"defaults": {"tileTint": "on", "logoStrokeWidth": 2}})
+    fx = _fx(anon, "Vector")
+    assert fx["logo"] is None and "logo.svg/face" in fx["face"]  # the logo stays an SVG; the badge is a picture
+    face = anon.get(fx["face"])
+    assert face.status_code == 200 and face.mimetype == "image/webp"
+    middle = Image.open(io.BytesIO(face.data)).convert("RGB").getpixel((tilefx.SIZE // 2, tilefx.SIZE // 2))
+    assert middle[1] > middle[0] and middle[1] > middle[2]
+    assert anon.get(fx["face"].replace("/face?", "/logo?")).status_code == 404
+    admin.put("/api/defaults", json={"defaults": {"logoStrokeWidth": 2}})
+    assert _fx(anon, "Vector") is None  # outline only: nothing for the server to draw
+    admin.put("/api/defaults", json={"defaults": {}})
+    os.remove(path)
+
+
 def _spread(rgb):
     return max(rgb) - min(rgb)
 

@@ -9,6 +9,7 @@ images per app instead of computing gradients and filters for every tile.
 """
 
 import colorsys
+import re
 import hashlib
 import io
 import math
@@ -54,7 +55,36 @@ def _pixels(image):
     return getattr(image, "get_flattened_data", image.getdata)()
 
 
+_SVG_COLOUR = re.compile(r"#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b|rgba?\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})")
+_SVG_MAX_BYTES = 1024 * 1024
+
+
+def svg_swatch(path):
+    """An SVG cannot be decoded here, but the badge only needs the logo's
+    colours - and an SVG names them in plain text (fill, stroke, gradient
+    stops). They become a small picture with one stripe per colour, in the
+    proportions they are mentioned, which the colour analysis below reads like
+    any other icon. The file is only searched as text, never parsed as XML."""
+    with open(path, "rb") as handle:
+        source = handle.read(_SVG_MAX_BYTES).decode("utf-8", errors="replace")
+    colours = []
+    for match in _SVG_COLOUR.finditer(source):
+        if match.group(1):
+            digits = match.group(1)
+            if len(digits) == 3:
+                digits = "".join(c * 2 for c in digits)
+            colours.append(tuple(int(digits[i : i + 2], 16) for i in (0, 2, 4)))
+        else:
+            colours.append(tuple(min(255, int(match.group(i))) for i in (2, 3, 4)))
+    colours = colours[:400] or [(128, 128, 128)]
+    swatch = Image.new("RGBA", (len(colours), 8))
+    swatch.putdata([c + (255,) for c in colours] * 8)
+    return swatch
+
+
 def load_icon(path):
+    if path.lower().endswith(".svg"):
+        return svg_swatch(path)
     image = Image.open(path)
     image.load()
     return image.convert("RGBA")

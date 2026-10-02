@@ -58,6 +58,7 @@ PALETTE_ACCENTS = {
 }
 
 _RASTER = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".ico")
+_VECTOR = (".svg",)
 
 
 def radius_percent(roundness):
@@ -103,12 +104,16 @@ def settings(defaults):
 
 def urls_for(app, chosen, icons_dir, secret):
     """{"face": url|None, "logo": url, "round": percent} for one app, or None
-    when it gets no server-drawn effects (browser mode, no raster icon, or
-    neither tint nor outline is on)."""
+    when it gets no server-drawn effects (browser mode, no icon file, or
+    neither tint nor outline is on). An SVG icon gets the badge only: its logo
+    stays the SVG itself, drawn (and outlined) by the browser."""
     icon = app.get("icon")
-    if chosen["tileFxMode"] != "server" or not isinstance(icon, str) or not icon.lower().endswith(_RASTER):
+    if chosen["tileFxMode"] != "server" or not isinstance(icon, str) or not icon.lower().endswith(_RASTER + _VECTOR):
         return None
     tint = chosen["tileTint"] == "on"
+    vector = icon.lower().endswith(_VECTOR)
+    if vector and not tint:
+        return None  # an SVG logo is drawn by the browser; only its badge comes from here
     width = app.get("iconStroke")
     if isinstance(width, bool) or not isinstance(width, (int, float)):
         width = chosen["logoStrokeWidth"]
@@ -131,6 +136,6 @@ def urls_for(app, chosen, icons_dir, secret):
     face = {"v": version, "r": radius, "s": chosen["tileBadgeStyle"], "c": chosen["tileBadgeColor"], "vb": vibrancy}
     return {
         "face": _url(secret, "face", icon, face) if tint else None,
-        "logo": _url(secret, "logo", icon, logo),
+        "logo": None if vector else _url(secret, "logo", icon, logo),
         "round": radius,
     }

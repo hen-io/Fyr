@@ -28,7 +28,7 @@ def tile_image(icon, kind):
     the parameters must carry a valid signature, so nobody can ask for
     arbitrary variants and keep the server busy drawing them. The response is
     cached for good - a changed icon or setting gives a different URL."""
-    if kind not in ("face", "logo") or not _ICON_NAME.match(icon) or icon.lower().endswith(".svg"):
+    if kind not in ("face", "logo") or not _ICON_NAME.match(icon) or (kind == "logo" and icon.lower().endswith(".svg")):
         return Response(status=404)
     names = _FACE_PARAMS if kind == "face" else _LOGO_PARAMS
     params = {name: request.args[name] for name in names if name in request.args}

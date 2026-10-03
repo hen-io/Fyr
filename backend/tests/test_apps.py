@@ -1,5 +1,6 @@
 """Apps, categories, who sees what, status checks, icons."""
 
+import io
 import json
 import os
 
@@ -74,6 +75,46 @@ def test_icon_upload_accepts_only_real_images(admin, visitor, anon, app):
     served = anon.get("/icons/ok.png")
     assert "sandbox" in served.headers["Content-Security-Policy"]
     assert anon.get("/icons/../../etc/passwd").status_code in (400, 404)
+
+
+def test_icons_can_be_listed_renamed_and_deleted(admin, visitor, anon, app):
+    png = make_png()
+    assert upload(admin, "/api/icons", "logo-a.png", png).status_code == 201
+    assert upload(admin, "/api/icons", "logo-b.png", png).status_code == 201
+    apps = [{"title": "One", "url": "https://one.example", "icon": "logo-a.png", "category": "Open"}, {"title": "Two", "url": "https://two.example", "icon": "logo-a.png"}]
+    assert admin.put("/api/apps", json={"apps": apps, "categories": {"Open": {}}}).status_code == 200
+
+    assert "logo-a.png" in admin.get("/api/icons").get_json()  # the plain list is unchanged
+    details = {i["name"]: i for i in admin.get("/api/icons?details=1").get_json()["icons"]}
+    assert details["logo-a.png"]["used_by"] == ["One", "Two"] and details["logo-a.png"]["size"] == len(png)
+    assert details["logo-b.png"]["used_by"] == []
+
+    for client, status in ((visitor, 403), (anon, 401)):
+        assert client.patch("/api/icons/logo-a.png", json={"name": "x.png"}).status_code == status
+        assert client.delete("/api/icons/logo-b.png").status_code == status
+
+    assert admin.patch("/api/icons/logo-a.png", json={"name": "logo-b.png"}).get_json()["error"] == "exists"
+    assert admin.patch("/api/icons/logo-a.png", json={"name": "logo-a.svg"}).get_json()["error"] == "extension_changed"
+    assert admin.patch("/api/icons/logo-a.png", json={"name": "../up.png"}).status_code == 400
+    assert admin.patch("/api/icons/nope.png", json={"name": "other.png"}).status_code == 404
+    renamed = admin.patch("/api/icons/logo-a.png", json={"name": "renamed.png"})
+    assert renamed.status_code == 200 and renamed.get_json() == {"name": "renamed.png", "apps": 2}
+    assert [a["icon"] for a in admin.get("/api/apps?all=1").get_json()["apps"]] == ["renamed.png", "renamed.png"]
+    assert anon.get("/icons/logo-a.png").status_code == 404 and anon.get("/icons/renamed.png").status_code == 200
+
+    assert upload_keep(admin, "renamed.png", png).status_code == 409
+    assert admin.delete("/api/icons/logo-b.png").status_code == 200
+    refused = admin.delete("/api/icons/renamed.png")
+    assert refused.status_code == 409 and refused.get_json()["apps"] == ["One", "Two"]
+    assert admin.delete("/api/icons/renamed.png?force=1").get_json() == {"ok": True, "apps": 2}
+    assert all("icon" not in a for a in admin.get("/api/apps?all=1").get_json()["apps"])
+    assert not os.path.exists(os.path.join(app.config["CONFIG_DIR"], "icons", "renamed.png"))
+    assert admin.delete("/api/icons/..%2f..%2fusers.json").status_code in (400, 404)
+    admin.put("/api/apps", json={"apps": [], "categories": {}})
+
+
+def upload_keep(client, name, content):
+    return client.post("/api/icons", data={"file": (io.BytesIO(content), name, "image/png"), "replace": "0"}, content_type="multipart/form-data")
 
 
 def test_avatar_is_decoded_and_re_encoded(visitor, anon):

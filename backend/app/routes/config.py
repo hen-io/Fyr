@@ -1,9 +1,9 @@
 import os
 import re
 
-from flask import Blueprint, current_app, jsonify, request, send_from_directory
+from flask import Blueprint, current_app, jsonify, request, send_from_directory, session
 
-from .. import tileurls
+from .. import audit, tileurls
 from ..auth import current_user, require_role
 from ..fileio import load_yaml, save_yaml
 from ..imageio import ImageRejected, verify_icon
@@ -300,15 +300,104 @@ def serve_icon(filename):
     return response
 
 
+def _icons_dir():
+    return os.path.join(current_app.config["CONFIG_DIR"], "icons")
+
+
+def _icon_users(data):
+    """{icon file name: [titles of the apps showing it]}"""
+    users = {}
+    for app in _flatten_apps(data):
+        if isinstance(app.get("icon"), str):
+            users.setdefault(app["icon"], []).append(app.get("title") or "")
+    return users
+
+
+def _set_app_icons(data, old, new):
+    """Point every app showing `old` at `new` (None: at no icon). Returns how many."""
+    changed = 0
+    for cat_data in (data.get("categories") or {}).values():
+        apps = cat_data.get("apps") if isinstance(cat_data, dict) else cat_data
+        for app in apps or []:
+            if isinstance(app, dict) and app.get("icon") == old:
+                if new:
+                    app["icon"] = new
+                else:
+                    app.pop("icon", None)
+                changed += 1
+    return changed
+
+
 @config_bp.route("/api/icons", methods=["GET"])
 @require_role("admin")
 def list_icons():
-    icons_dir = os.path.join(current_app.config["CONFIG_DIR"], "icons")
+    """The file names; with ?details=1 also each file's size, when it was
+    last changed and which apps show it (the admin panel's logo tab)."""
     try:
-        names = sorted(n for n in os.listdir(icons_dir) if _ICON_NAME.match(n))
+        names = sorted((n for n in os.listdir(_icons_dir()) if _ICON_NAME.match(n)), key=str.lower)
     except OSError:
         names = []
-    return jsonify(names)
+    if not request.args.get("details"):
+        return jsonify(names)
+    users = _icon_users(_load_yaml(_apps_path(current_app.config), {}))
+    icons = []
+    for name in names:
+        try:
+            stat = os.stat(os.path.join(_icons_dir(), name))
+        except OSError:
+            continue
+        icons.append({"name": name, "size": stat.st_size, "modified": int(stat.st_mtime), "used_by": users.get(name, [])})
+    return jsonify({"icons": icons})
+
+
+@config_bp.route("/api/icons/<name>", methods=["PATCH"])
+@require_role("admin")
+def rename_icon(name):
+    """Rename a logo file. The apps showing it follow along."""
+    body = request.get_json(silent=True)
+    new = body.get("name") if isinstance(body, dict) else None
+    if not _ICON_NAME.match(name) or not isinstance(new, str) or not _ICON_NAME.match(new):
+        return jsonify({"error": "invalid_name"}), 400
+    # The extension says what kind of image the file is; it stays.
+    if name.rsplit(".", 1)[1].lower() != new.rsplit(".", 1)[1].lower():
+        return jsonify({"error": "extension_changed"}), 400
+    source, target = os.path.join(_icons_dir(), name), os.path.join(_icons_dir(), new)
+    if not os.path.isfile(source):
+        return jsonify({"error": "not_found"}), 404
+    if new == name:
+        return jsonify({"name": new, "apps": 0})
+    # (A change of capitals only is the same file on a case-insensitive disk.)
+    if os.path.exists(target) and not (new.lower() == name.lower() and os.path.samefile(source, target)):
+        return jsonify({"error": "exists"}), 409
+    os.rename(source, target)
+    data = _load_yaml(_apps_path(current_app.config), {})
+    changed = _set_app_icons(data, name, new)
+    if changed:
+        _save_yaml(_apps_path(current_app.config), data)
+    audit.record("icon_renamed", icon=name, to=new, apps=changed, by=session["username"])
+    return jsonify({"name": new, "apps": changed})
+
+
+@config_bp.route("/api/icons/<name>", methods=["DELETE"])
+@require_role("admin")
+def delete_icon(name):
+    """Delete a logo file. One that apps still show is only deleted with
+    ?force=1, and those apps are then left without a logo."""
+    if not _ICON_NAME.match(name):
+        return jsonify({"error": "invalid_name"}), 400
+    path = os.path.join(_icons_dir(), name)
+    if not os.path.isfile(path):
+        return jsonify({"error": "not_found"}), 404
+    data = _load_yaml(_apps_path(current_app.config), {})
+    used_by = _icon_users(data).get(name, [])
+    if used_by and not request.args.get("force"):
+        return jsonify({"error": "in_use", "apps": used_by}), 409
+    os.remove(path)
+    if used_by:
+        _set_app_icons(data, name, None)
+        _save_yaml(_apps_path(current_app.config), data)
+    audit.record("icon_deleted", icon=name, apps=len(used_by), by=session["username"])
+    return jsonify({"ok": True, "apps": len(used_by)})
 
 
 @config_bp.route("/api/icons", methods=["POST"])
@@ -329,8 +418,12 @@ def upload_icon():
         verify_icon(data, name.rsplit(".", 1)[1])
     except ImageRejected:
         return jsonify({"error": "not_an_image"}), 400
-    icons_dir = os.path.join(current_app.config["CONFIG_DIR"], "icons")
+    icons_dir = _icons_dir()
     os.makedirs(icons_dir, exist_ok=True)
+    # The logo tab asks before replacing a file (it sends replace=1 once the
+    # admin has agreed); without the field an upload overwrites, as before.
+    if request.form.get("replace") == "0" and os.path.exists(os.path.join(icons_dir, name)):
+        return jsonify({"error": "exists", "name": name}), 409
     with open(os.path.join(icons_dir, name), "wb") as f:
         f.write(data)
     return jsonify({"name": name}), 201

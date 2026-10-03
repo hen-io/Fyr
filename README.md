@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-# Fyr - Dashboard and app launcher for yuor selfhosted apps. the perceft home portal!
+# Fyr - Dashboard and app launcher for your selfhosted apps.
 
 All-In-One Docker container with a highly configurable web-based app launcher for your selfhosted web apps.
 

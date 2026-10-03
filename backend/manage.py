@@ -11,8 +11,16 @@ import sys
 
 from app.auth import VALID_ROLES, create_user, load_users
 from app.config import Config
+from app.passwords import MIN_LENGTH, password_problem
 
 _CONFIG = {"DATA_DIR": Config.DATA_DIR}
+
+_PROBLEMS = {
+    "password_too_short": f"Password must be at least {MIN_LENGTH} characters.",
+    "password_too_long": "Password is too long.",
+    "password_too_similar": "Password is too close to the username.",
+    "password_too_common": "That password is too easy to guess (a well-known password, a keyboard run, or a common word with digits). Pick something else.",
+}
 
 
 def adduser():
@@ -23,7 +31,7 @@ def adduser():
 
     existing = load_users(_CONFIG)
     if username in existing:
-        confirm = input(f"'{username}' already exists - overwrite? [y/N]: ").strip().lower()
+        confirm = input(f"'{username}' already exists - set a new password and role for it? [y/N]: ").strip().lower()
         if confirm != "y":
             print("Cancelled.")
             return 1
@@ -34,19 +42,21 @@ def adduser():
         return 1
 
     password = getpass.getpass("Password: ")
-    if len(password) < 8:
-        print("Password must be at least 8 characters.")
+    problem = password_problem(password, username)
+    if problem:
+        print(_PROBLEMS[problem])
         return 1
     if password != getpass.getpass("Confirm password: "):
         print("Passwords did not match.")
         return 1
 
     try:
-        create_user(username, password, role, _CONFIG)
+        # An existing account keeps its profile but loses every open session.
+        create_user(username, password, role, _CONFIG, overwrite=True)
     except ValueError as err:
         print(f"Could not create the user: {err}")
         return 1
-    print(f"User '{username}' created with role '{role}'.")
+    print(f"User '{username}' {'updated' if username in existing else 'created'} with role '{role}'.")
     return 0
 
 

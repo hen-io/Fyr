@@ -63,7 +63,7 @@ def report(name, vulnerable, detail=""):
 
 anon, admin, vis = Client(), Client(), Client()
 assert admin.login(ADMIN) == 200, "admin login failed - is the test backend running with admin1?"
-admin.call("POST", "/api/users", {"username": VISITOR[0], "password": VISITOR[1], "role": "visitor"})
+admin.call("POST", "/api/users", {"username": VISITOR[0], "password": VISITOR[1], "role": "visitor", "confirm_password": ADMIN[1]})
 assert vis.login(VISITOR) == 200
 
 # ---------------------------------------------------------------- fixtures
@@ -159,9 +159,9 @@ still = old.json("GET", "/api/me")[0] == 200
 vis.json("PUT", "/api/me/password", {"current_password": "visitorpass2", "new_password": VISITOR[1]})
 report("changing the password signs out the account's other sessions", still)
 gone = Client()
-admin.call("POST", "/api/users", {"username": "pentest_tmp", "password": "temporary123", "role": "admin"})
+admin.call("POST", "/api/users", {"username": "pentest_tmp", "password": "temporary123", "role": "admin", "confirm_password": ADMIN[1]})
 gone.login(("pentest_tmp", "temporary123"))
-admin.call("DELETE", "/api/users/pentest_tmp")
+admin.call("DELETE", "/api/users/pentest_tmp", {"confirm_password": ADMIN[1]})
 report("a deleted admin's session stops working immediately", gone.json("GET", "/api/users")[0] == 200)
 
 # ---------------------------------------------------------------- 6. cross-site request forgery
@@ -264,7 +264,7 @@ report("integration secrets are never sent back", bool(secrets))
 report("server banner does not reveal the framework version", "Werkzeug" in headers.get("Server", "") and False)
 
 # ---------------------------------------------------------------- cleanup
-admin.call("DELETE", "/api/users/" + VISITOR[0])
+admin.call("DELETE", "/api/users/" + VISITOR[0], {"confirm_password": ADMIN[1]})
 vulns = [n for n, v in results if v]
 print(f"\n{len(results)} checks, {len(vulns)} VULNERABLE")
 sys.exit(len(vulns))

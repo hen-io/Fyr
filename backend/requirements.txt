@@ -4,3 +4,4 @@ paho-mqtt
 flask-session
 pyyaml
 pillow
+argon2-cffi

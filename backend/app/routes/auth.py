@@ -3,7 +3,9 @@ import os
 
 from flask import Blueprint, current_app, jsonify, request, send_from_directory, session
 
-from ..auth import USERNAME_RE, bump_session_epoch, change_password, current_user, load_users, require_role, save_users, session_epoch, verify_login
+from .. import audit
+from ..auth import USERNAME_RE, bump_session_epoch, change_password, current_user, load_users, require_role, session_epoch, set_user_fields, verify_login
+from ..passwords import MAX_LENGTH, password_problem
 from ..prefs import clear_prefs, get_prefs, set_prefs
 from ..imageio import ImageRejected, normalize_avatar
 from ..ratelimit import is_locked_out, record_failure, record_success
@@ -41,24 +43,31 @@ def login():
     password = secret(body, "password")
     address = client_address()
 
-    if not username or is_locked_out(username, address):
+    if not username:
+        return jsonify({"error": "invalid_credentials"}), 401
+    if is_locked_out(username, address):
         # Same error either way - "locked out" and "wrong password" must
         # look identical to the client, or the lockout itself becomes a way
         # to confirm a username is real.
+        audit.record("login_refused_locked", user=username, addr=address)
         return jsonify({"error": "invalid_credentials"}), 401
 
     role = verify_login(username, password)
     if role is None:
         record_failure(username, address)
+        audit.record("login_failed", user=username, addr=address)
         return jsonify({"error": "invalid_credentials"}), 401
 
     record_success(username, address)
     _start_session(username, role)
+    audit.record("login", user=username, addr=address)
     return jsonify({"username": username, "role": role})
 
 
 @auth_bp.route("/api/logout", methods=["POST"])
 def logout():
+    if "username" in session:
+        audit.record("logout", user=session["username"])
     session.clear()
     return jsonify({"ok": True})
 
@@ -111,18 +120,21 @@ def change_my_password():
 
     body = json_object()
     current_password = secret(body, "current_password")
-    new_password = secret(body, "new_password")
+    new_password = secret(body, "new_password", MAX_LENGTH * 4)
 
     if verify_login(username, current_password) is None:
         record_failure(username, address)
+        audit.record("password_change_refused", user=username, addr=address)
         return jsonify({"error": "wrong_current_password"}), 401
-
-    if len(new_password) < 8:
-        return jsonify({"error": "password_too_short"}), 400
-
     record_success(username, address)
+
+    problem = password_problem(new_password, username)
+    if problem:
+        return jsonify({"error": problem}), 400
+
     # Every other session of this account ends here; this one carries on.
     session["epoch"] = change_password(username, new_password, current_app.config)
+    audit.record("password_changed", user=username, addr=address)
     return jsonify({"ok": True})
 
 
@@ -131,6 +143,7 @@ def change_my_password():
 def sign_out_everywhere_else():
     """Ends every other session of this account (a lost phone, a shared PC)."""
     session["epoch"] = bump_session_epoch(session["username"], current_app.config)
+    audit.record("sessions_ended", user=session["username"])
     return jsonify({"ok": True})
 
 
@@ -144,9 +157,7 @@ def update_my_profile():
         return jsonify({"error": "display_name_too_long"}), 400
     display_name = (raw or "").strip()
 
-    users = load_users(current_app.config)
-    users[username]["display_name"] = display_name or None
-    save_users(users, current_app.config)
+    set_user_fields(username, current_app.config, display_name=display_name or None)
     return jsonify({"ok": True})
 
 
@@ -190,8 +201,7 @@ def upload_my_avatar():
     with open(os.path.join(avatars_dir, f"{username}.{ext}"), "wb") as f:
         f.write(data)
 
-    users[username]["avatar_ext"] = ext
-    save_users(users, current_app.config)
+    set_user_fields(username, current_app.config, avatar_ext=ext)
     return jsonify({"ok": True})
 
 
@@ -207,8 +217,7 @@ def delete_my_avatar():
         path = os.path.join(_avatars_dir(current_app.config), f"{username}.{ext}")
         if os.path.exists(path):
             os.remove(path)
-        users[username]["avatar_ext"] = None
-        save_users(users, current_app.config)
+        set_user_fields(username, current_app.config, avatar_ext=None)
     return jsonify({"ok": True})
 
 

@@ -36,11 +36,25 @@ def _cached(path, parse, default):
     return copy.deepcopy(value)
 
 
-def _write_atomic(path, write):
+def _write_atomic(path, write, mode=None):
+    """`mode` (e.g. 0o600) is for files that hold secrets: the file is created
+    with those permissions from the start - it is never readable by other
+    accounts, not even for the moment between writing and a later chmod."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o666 if mode is None else mode)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         write(f)
+        f.flush()
+        try:
+            os.fsync(f.fileno())  # on disk before it replaces the old file: a crash leaves the old or the new, never an empty one
+        except OSError:
+            pass
+    if mode is not None:
+        try:
+            os.chmod(tmp, mode)  # a leftover tmp file from a crash keeps its old permissions otherwise
+        except OSError:
+            pass
     os.replace(tmp, path)
     with _lock:
         _cache.pop(path, None)
@@ -60,5 +74,5 @@ def load_json(path, default):
     return default if value is None else value
 
 
-def save_json(path, data, indent=2):
-    _write_atomic(path, lambda f: json.dump(data, f, indent=indent))
+def save_json(path, data, indent=2, mode=None):
+    _write_atomic(path, lambda f: json.dump(data, f, indent=indent), mode)

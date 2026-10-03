@@ -30,8 +30,14 @@ os.environ.update(
 os.makedirs(os.environ["CONFIG_DIR"], exist_ok=True)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app import create_app, ratelimit  # noqa: E402
+from app import create_app, passwords, ratelimit  # noqa: E402
 from app.auth import create_user  # noqa: E402
+
+# The real settings make every login cost 64 MiB and a tenth of a second - by
+# design, but the suite logs in hundreds of times. test_passwords.py checks the real ones.
+REAL_PARAMS = dict(passwords.PARAMS)
+FAST_PARAMS = {"time_cost": 1, "memory_cost": 64, "parallelism": 1}
+passwords.PARAMS = FAST_PARAMS
 
 ADMIN = ("admin1", "adminpass123")
 VISITOR = ("vis1", "visitorpass1")

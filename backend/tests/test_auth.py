@@ -1,5 +1,6 @@
 """Logging in, sessions, accounts."""
 
+from app import ratelimit
 from conftest import ADMIN, VISITOR
 
 
@@ -95,14 +96,40 @@ def test_sign_out_everywhere_else(login):
     assert elsewhere.get("/api/me").status_code == 401
 
 
+CONFIRM = {"confirm_password": ADMIN[1]}
+
+
 def test_admin_resets_a_password(admin, login, app):
-    assert admin.put(f"/api/users/{VISITOR[0]}/password", json={"password": "short"}).status_code == 400
-    assert admin.put("/api/users/nobody/password", json={"password": "longenough1"}).status_code == 404
+    assert admin.put(f"/api/users/{VISITOR[0]}/password", json={"password": "short", **CONFIRM}).status_code == 400
+    assert admin.put("/api/users/nobody/password", json={"password": "longenough1", **CONFIRM}).status_code == 404
     old_session = login(VISITOR)
-    assert admin.put(f"/api/users/{VISITOR[0]}/password", json={"password": "resetpass123"}).status_code == 200
+    assert admin.put(f"/api/users/{VISITOR[0]}/password", json={"password": "resetpass123", **CONFIRM}).status_code == 200
     assert old_session.get("/api/me").status_code == 401
     assert login((VISITOR[0], "resetpass123")).get("/api/me").status_code == 200
-    assert admin.put(f"/api/users/{VISITOR[0]}/password", json={"password": VISITOR[1]}).status_code == 200
+    assert admin.put(f"/api/users/{VISITOR[0]}/password", json={"password": VISITOR[1], **CONFIRM}).status_code == 200
+
+
+def test_account_changes_need_the_admins_own_password_again(admin, login):
+    """A session alone (left open, or taken over) must not be enough to hand
+    out passwords, create admins or remove accounts."""
+    for wrong in ({}, {"confirm_password": "not-my-password"}, {"confirm_password": ["x"]}):
+        assert admin.post("/api/users", json={"username": "sneaky", "password": "longenough1", "role": "admin", **wrong}).status_code == 403
+        assert admin.put(f"/api/users/{VISITOR[0]}/password", json={"password": "hijacked-pass1", **wrong}).status_code == 403
+        assert admin.put(f"/api/users/{ADMIN[0]}/password", json={"password": "hijacked-pass1", **wrong}).status_code == 403  # not even your own
+        assert admin.put(f"/api/users/{VISITOR[0]}/role", json={"role": "admin", **wrong}).status_code == 403
+        assert admin.delete(f"/api/users/{VISITOR[0]}", json=wrong).status_code == 403
+        ratelimit.reset()
+    users = {u["username"]: u["role"] for u in admin.get("/api/users").get_json()}
+    assert "sneaky" not in users and users[VISITOR[0]] == "visitor"
+    assert login(VISITOR).get("/api/me").status_code == 200 and login(ADMIN).get("/api/me").status_code == 200  # passwords untouched
+
+
+def test_confirmation_guesses_are_limited_like_logins(admin):
+    for _ in range(5):
+        assert admin.put(f"/api/users/{VISITOR[0]}/role", json={"role": "admin", "confirm_password": "guess"}).status_code == 403
+    # even the right password is refused now, and nothing changed
+    assert admin.put(f"/api/users/{VISITOR[0]}/role", json={"role": "admin", **CONFIRM}).status_code == 429
+    assert admin.get("/api/me").status_code == 200  # the session itself carries on
 
 
 def test_visitor_cannot_reset_passwords(visitor):
@@ -114,19 +141,19 @@ def test_visitor_cannot_reset_passwords(visitor):
 
 def test_user_management_rules(admin, visitor):
     assert visitor.get("/api/users").status_code == 403
-    assert admin.post("/api/users", json={"username": "../x", "password": "longenough1"}).status_code == 400
-    assert admin.post("/api/users", json={"username": "ok", "password": "short"}).status_code == 400
-    assert admin.post("/api/users", json={"username": ADMIN[0], "password": "longenough1"}).status_code == 409
-    assert admin.delete(f"/api/users/{ADMIN[0]}").status_code == 400  # not yourself
-    assert admin.put(f"/api/users/{ADMIN[0]}/role", json={"role": "visitor"}).status_code == 400  # not the last admin
+    assert admin.post("/api/users", json={"username": "../x", "password": "longenough1", **CONFIRM}).status_code == 400
+    assert admin.post("/api/users", json={"username": "ok", "password": "short", **CONFIRM}).status_code == 400
+    assert admin.post("/api/users", json={"username": ADMIN[0], "password": "longenough1", **CONFIRM}).status_code == 409
+    assert admin.delete(f"/api/users/{ADMIN[0]}", json=CONFIRM).status_code == 400  # not yourself
+    assert admin.put(f"/api/users/{ADMIN[0]}/role", json={"role": "visitor", **CONFIRM}).status_code == 400  # not the last admin
 
 
 def test_deleted_account_loses_access_and_leaves_nothing_behind(admin, login, app):
-    assert admin.post("/api/users", json={"username": "temp1", "password": "temporary123", "role": "admin"}).status_code == 201
+    assert admin.post("/api/users", json={"username": "temp1", "password": "temporary123", "role": "admin", **CONFIRM}).status_code == 201
     temp = login(("temp1", "temporary123"))
     assert temp.put("/api/me/prefs", json={"palette": "nordic"}).status_code == 200
     assert temp.get("/api/users").status_code == 200
-    assert admin.delete("/api/users/temp1").status_code == 200
+    assert admin.delete("/api/users/temp1", json=CONFIRM).status_code == 200
     assert temp.get("/api/users").status_code == 401
     from app.prefs import load_all_prefs
 

@@ -43,8 +43,4 @@ def load(data_dir, integration_id):
 def save(data_dir, integration_id, values):
     everything = load_all(data_dir)
     everything[integration_id] = values
-    save_json(_path(data_dir), everything)
-    try:
-        os.chmod(_path(data_dir), 0o600)  # holds tokens and passwords
-    except OSError:
-        pass
+    save_json(_path(data_dir), everything, mode=0o600)  # holds tokens and passwords

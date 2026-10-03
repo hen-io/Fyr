@@ -6,6 +6,7 @@ from flask import Flask, jsonify, request
 from flask_session import Session
 from werkzeug.exceptions import HTTPException
 
+from . import passwords
 from .config import Config
 from .datasources.registry import DataSourceRegistry
 from .routes.auth import auth_bp
@@ -64,6 +65,10 @@ def create_app():
     # expects to hold only plain config values) so every route can reach it
     # via current_app.datasources.
     app.datasources = DataSourceRegistry(app.config, app.config["DATA_DIR"])
+
+    # Made now rather than during the first login for an unknown username,
+    # which would otherwise take visibly longer than every later one.
+    passwords.dummy_hash()
 
     app.register_blueprint(legacy_bp)
     app.register_blueprint(auth_bp)
@@ -129,6 +134,13 @@ def create_app():
     @app.errorhandler(405)
     def method_not_allowed(_e):
         return jsonify({"error": "method_not_allowed"}), 405
+
+    @app.errorhandler(passwords.Busy)
+    def busy(_e):
+        # too many password checks at once (see passwords.py): come back shortly
+        response = jsonify({"error": "busy"})
+        response.headers["Retry-After"] = "5"
+        return response, 503
 
     @app.errorhandler(HTTPException)
     def http_error(err):

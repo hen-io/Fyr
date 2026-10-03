@@ -19,6 +19,12 @@ def test_login_and_logout(anon):
     assert anon.get("/api/me").status_code == 401
 
 
+def test_login_answers_with_the_whole_profile(app):
+    client = app.test_client()
+    body = client.post("/api/login", json={"username": "vis1", "password": "visitorpass1"}).get_json()
+    assert "display_name" in body and "has_avatar" in body and body == client.get("/api/me").get_json()
+
+
 def test_session_cookie_flags(app):
     response = app.test_client().post("/api/login", json={"username": VISITOR[0], "password": VISITOR[1]})
     cookie = response.headers["Set-Cookie"]

@@ -42,6 +42,7 @@ _ALLOWED = {
     "copyrightText": str,
     "language": str,
     "narrowLauncherLast": str,
+    "headerSearch": str,
     "tileOpacity": int,
     "tileBlur": int,
     "gridMargin": int,

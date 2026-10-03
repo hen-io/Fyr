@@ -8,8 +8,8 @@ from .config import _ICON_NAME
 tilefx_bp = Blueprint("tilefx", __name__)
 
 _MODES = ("dark", "light")
-_FACE_PARAMS = ("v", "r", "s", "c", "vb")
-_LOGO_PARAMS = ("v", "t", "sw", "sc", "m", "ac")
+_FACE_PARAMS = ("v", "r", "s", "c", "vb", "bc", "bc2")
+_LOGO_PARAMS = ("v", "t", "sw", "sc", "m", "ac", "bc")
 
 
 def _number(value, default, lo, hi):
@@ -49,13 +49,14 @@ def tile_image(icon, kind):
     style = params.get("s") if params.get("s") in tilefx.BADGE_STYLES else "glass"
     colour_style = params.get("c") if params.get("c") in tilefx.BADGE_COLOURS else "diagonal"
     vibrancy = _number(params.get("vb"), tilefx.DEFAULT_VIBRANCY, 0, 100)
+    colour, colour2 = (tileurls.hex_colour("#" + params.get(name, "")) for name in ("bc", "bc2"))
     if kind == "logo" and not tint and width <= 0:
         return Response(status=404)
 
     key = "|".join([kind, icon] + [f"{name}={params[name]}" for name in sorted(params)])
     try:
         data = tilefx.get_or_render(
-            os.path.join(current_app.config["DATA_DIR"], "tilefx"), key, icon_path, kind, tint, width, color, mode, accent, radius, style, colour_style, vibrancy
+            os.path.join(current_app.config["DATA_DIR"], "tilefx"), key, icon_path, kind, tint, width, color, mode, accent, radius, style, colour_style, vibrancy, colour, colour2
         )
     except Exception:  # an unreadable/odd image: the browser falls back to the plain logo
         return Response(status=404)

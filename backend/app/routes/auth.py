@@ -61,7 +61,9 @@ def login():
     record_success(username, address)
     _start_session(username, role)
     audit.record("login", user=username, addr=address)
-    return jsonify({"username": username, "role": role})
+    # The same as /api/me answers (display name, avatar), so the page shows
+    # the whole profile at once.
+    return jsonify(current_user(current_app.config) or {"username": username, "role": role})
 
 
 @auth_bp.route("/api/logout", methods=["POST"])

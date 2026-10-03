@@ -161,3 +161,33 @@ def test_radius_formula():
     assert tileurls.radius_percent(40) == 36.0
     assert tileurls.radius_percent(0) == 0
     assert tileurls.radius_percent("x") == 18.0
+
+
+def test_an_app_can_have_its_own_badge_colours(admin, anon):
+    grey = make_png(48, (120, 120, 120))
+    assert upload(admin, "/api/icons", "mono.png", grey).status_code == 201
+    icon = Image.open(io.BytesIO(grey)).convert("RGBA")
+    middle = (tilefx.SIZE // 2, tilefx.SIZE // 2)
+    assert tilefx.render_face(icon, 20, "flat", "solid", colour="1e90ff").getpixel(middle)[:3] == (0x1E, 0x90, 0xFF)
+    assert tilefx.render_face(icon, 20, "flat", "solid", 0, colour="1e90ff").getpixel(middle)[:3] == (0x1E, 0x90, 0xFF)  # vibrancy leaves a picked colour alone
+    corner = (tilefx.SIZE - 40, tilefx.SIZE - 40)
+    r, g, b = tilefx.render_face(icon, 0, "flat", "duo", colour="1e90ff", colour2="ff2020").getpixel(corner)[:3]
+    assert r > 200 and b < 90  # the second colour, bottom right
+    assert tilefx.render_face(icon, 20, "glass", "diagonal", colour="000000").mode == "RGBA"  # a grey/black pick works too
+    assert tilefx.render_logo(icon, True, 2, "auto", "dark", "", "1e90ff").mode == "RGBA"
+
+    base = {"title": "Mono", "url": "https://mono.example", "icon": "mono.png"}
+    admin.put("/api/defaults", json={"defaults": {"tileTint": "on", "tileFxMode": "server"}})
+    for bad in ("blue", "#12345", "#gggggg", 5):
+        assert admin.put("/api/apps", json={"apps": [{**base, "badgeColor": bad}]}).status_code == 400
+    assert admin.put("/api/apps", json={"apps": [base]}).status_code == 200
+    plain = admin.get("/api/apps").get_json()["apps"][0]["fx"]
+    assert admin.put("/api/apps", json={"apps": [{**base, "badgeColor": "#1E90FF", "badgeColor2": "#ff2020"}]}).status_code == 200
+    stored = admin.get("/api/apps").get_json()["apps"][0]
+    assert stored["badgeColor"] == "#1e90ff" and stored["badgeColor2"] == "#ff2020"
+    assert "bc=1e90ff" in stored["fx"]["face"] and "bc2=ff2020" in stored["fx"]["face"] and "bc=1e90ff" in stored["fx"]["logo"]
+    assert stored["fx"]["face"] != plain["face"]
+    assert anon.get(stored["fx"]["face"]).status_code == 200 and anon.get(stored["fx"]["logo"]).status_code == 200
+    assert anon.get(stored["fx"]["face"].replace("bc=1e90ff", "bc=ff0000")).status_code == 404  # the colour is signed too
+    admin.put("/api/apps", json={"apps": []})
+    admin.put("/api/defaults", json={"defaults": {}})

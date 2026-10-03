@@ -61,6 +61,13 @@ _RASTER = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".ico")
 _VECTOR = (".svg",)
 
 
+def hex_colour(value):
+    """"rrggbb" for "#rrggbb" (any case), else None."""
+    if isinstance(value, str) and len(value) == 7 and value[0] == "#" and all(c in "0123456789abcdefABCDEF" for c in value[1:]):
+        return value[1:].lower()
+    return None
+
+
 def radius_percent(roundness):
     """A tile's corner radius as a share of its size - the same formula as
     tileRadiusPercent() in the frontend's constants/appearance.js."""
@@ -134,6 +141,12 @@ def urls_for(app, chosen, icons_dir, secret):
         logo["ac"] = PALETTE_ACCENTS.get(chosen["palette"], PALETTE_ACCENTS["ember"])
     vibrancy = int(max(0, min(100, round(float(chosen["tileBadgeVibrancy"]) / 5) * 5)))
     face = {"v": version, "r": radius, "s": chosen["tileBadgeStyle"], "c": chosen["tileBadgeColor"], "vb": vibrancy}
+    # Colours the admin picked for this app, instead of the logo's own.
+    first, second = hex_colour(app.get("badgeColor")), hex_colour(app.get("badgeColor2"))
+    if first:
+        face["bc"] = logo["bc"] = first
+    if second:
+        face["bc2"] = second
     return {
         "face": _url(secret, "face", icon, face) if tint else None,
         "logo": None if vector else _url(secret, "logo", icon, logo),

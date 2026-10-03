@@ -118,6 +118,12 @@ def _clean_apps(raw):
             if color not in _STROKE_COLORS:
                 return None, "invalid_app"
             app["iconStrokeColor"] = color
+        for key in ("badgeColor", "badgeColor2"):
+            value = item.get(key)
+            if value not in (None, ""):
+                if not tileurls.hex_colour(value):
+                    return None, "invalid_app"
+                app[key] = value.lower()
         title = app.get("title", "")
         if not title or len(title) > 80:
             return None, "invalid_title"

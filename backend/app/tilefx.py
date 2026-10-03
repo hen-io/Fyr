@@ -23,7 +23,7 @@ LOGO_FRACTION = 0.64  # logo box as a share of the tile side
 LOGO_LIFT = 0.012  # the logo sits a touch above centre (the tile label is below)
 UNIT = SIZE / 180.0  # image px per CSS px, for the outline width
 
-RENDER_VERSION = 13  # bump when the drawing changes: it is part of every cache key and image URL
+RENDER_VERSION = 14  # bump when the drawing changes: it is part of every cache key and image URL
 
 STROKE_COLORS = ("ink", "accent", "white", "black", "auto")
 
@@ -155,8 +155,24 @@ def _vivid(saturation, vibrancy):
     return saturation + (1 - saturation) * boost, 0.07 * boost
 
 
-def palette(icon, vibrancy=DEFAULT_VIBRANCY):
-    """Three colours from the logo's own hue: vivid centre, darker middle, deep edge."""
+def _chosen(colour):
+    """(rgb, (hue, saturation) or None for a grey) of a colour an admin picked."""
+    rgb = _hex_rgb(colour, None)
+    if rgb is None:
+        return None
+    h, l, s = colorsys.rgb_to_hls(*(c / 255 for c in rgb))
+    return rgb, ((h, s) if s >= 0.08 and 0.04 < l < 0.96 else None)
+
+
+def palette(icon, vibrancy=DEFAULT_VIBRANCY, colour=None):
+    """Three colours from the logo's own hue: vivid centre, darker middle, deep edge.
+    `colour` (hex) replaces the logo's colour with one the admin picked for the
+    app - used exactly as picked, so the vibrancy setting does not touch it."""
+    chosen = _chosen(colour)
+    if chosen:
+        rgb, hue = chosen
+        h, l, s = colorsys.rgb_to_hls(*(c / 255 for c in rgb))
+        return (rgb, _hls_rgb(h + 0.012, l * 0.77, s), _hls_rgb(h - 0.012, l * 0.48, s)), hue
     hue = dominant_hue(icon)
     if hue is None:
         grey = _clamp(average_grey(icon), 0.25, 0.75)
@@ -246,11 +262,11 @@ def _bevel(size, radius_pct, mask, depth):
     return ImageChops.subtract(mask, inner)
 
 
-def render_face(icon, radius_pct=0, style="glass", colour_style="diagonal", vibrancy=DEFAULT_VIBRANCY):
+def render_face(icon, radius_pct=0, style="glass", colour_style="diagonal", vibrancy=DEFAULT_VIBRANCY, colour=None, colour2=None):
     """The tile background: `colour_style` decides how the logo's own colours
     are laid out, `style` decides the 3D shading on top. The shape is the
     tile's rounded square."""
-    (c1, c2, c3), hue = palette(icon, vibrancy)
+    (c1, c2, c3), hue = palette(icon, vibrancy, colour)
     size = SIZE
     mask = _shape(size, radius_pct)
     diagonal = _diagonal(size)
@@ -270,8 +286,11 @@ def render_face(icon, radius_pct=0, style="glass", colour_style="diagonal", vibr
     elif colour_style == "solid":  # one even colour
         colour = Image.new("RGB", (size, size), c1)
     elif colour_style == "duo":  # the logo's own two main colours, corner to corner
-        other = secondary_hue(icon)
-        if hue is not None and other is not None:
+        picked = _hex_rgb(colour2, None)
+        other = None if picked or colour else secondary_hue(icon)
+        if picked:  # the admin's own second colour
+            colour = ImageOps.colorize(diagonal, black=_lighten(c1, 0.12), mid=c1, white=picked, midpoint=110)
+        elif hue is not None and other is not None:
             other_s, other_lift = _vivid(_clamp(other[1] * 1.3, 0.8, 1.0), vibrancy)
             last = _hls_rgb(other[0], 0.46 + other_lift, other_s)
             colour = ImageOps.colorize(diagonal, black=_lighten(c1, 0.12), mid=c1, white=last, midpoint=110)
@@ -445,7 +464,7 @@ def _stroke_rgb(key, hue, mode, accent):
     return (245, 245, 247) if mode == "dark" else (20, 23, 36)  # "ink": contrast to the page
 
 
-def render_logo(icon, tint, stroke_width, stroke_color, mode, accent):
+def render_logo(icon, tint, stroke_width, stroke_color, mode, accent, colour=None):
     size = SIZE
     box = round(size * LOGO_FRACTION)
     logo = icon.copy()
@@ -453,7 +472,7 @@ def render_logo(icon, tint, stroke_width, stroke_color, mode, accent):
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     canvas.paste(logo, ((size - logo.width) // 2, round((size - logo.height) / 2 - size * LOGO_LIFT)), logo)
     alpha = canvas.split()[3]
-    (c1, c2, c3), hue = palette(icon)
+    (c1, c2, c3), hue = palette(icon, colour=colour)
 
     out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     base_alpha = alpha
@@ -499,7 +518,7 @@ def _trim_cache(cache_dir):
         pass
 
 
-def get_or_render(cache_dir, key, icon_path, kind, tint, stroke_width, stroke_color, mode, accent, radius_pct=0, style="glass", colour_style="diagonal", vibrancy=DEFAULT_VIBRANCY):
+def get_or_render(cache_dir, key, icon_path, kind, tint, stroke_width, stroke_color, mode, accent, radius_pct=0, style="glass", colour_style="diagonal", vibrancy=DEFAULT_VIBRANCY, colour=None, colour2=None):
     """The rendered WebP for `key`, from the disk cache or freshly drawn."""
     os.makedirs(cache_dir, exist_ok=True)
     path = cache_path(cache_dir, key)
@@ -513,9 +532,9 @@ def get_or_render(cache_dir, key, icon_path, kind, tint, stroke_width, stroke_co
                 return handle.read()
         icon = load_icon(icon_path)
         if kind == "face":
-            data = _encode(render_face(icon, radius_pct, style, colour_style, vibrancy), "face")
+            data = _encode(render_face(icon, radius_pct, style, colour_style, vibrancy, colour, colour2), "face")
         else:
-            data = _encode(render_logo(icon, tint, stroke_width, stroke_color, mode, accent), "logo")
+            data = _encode(render_logo(icon, tint, stroke_width, stroke_color, mode, accent, colour), "logo")
         tmp = path + ".tmp"
         with open(tmp, "wb") as handle:
             handle.write(data)

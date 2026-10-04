@@ -43,6 +43,7 @@ _ALLOWED = {
     "narrowLauncherLast": str,
     "headerSearch": str,
     "searchEngine": str,
+    "pauseUnfocused": str,
     "windowUrlState": str,
     "appLoader": str,
     "tileOpacity": int,

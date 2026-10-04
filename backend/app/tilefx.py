@@ -207,7 +207,7 @@ def _shape(size, radius_pct, inset=0.0):
     radius = max(0.0, big * max(radius_pct, 0) / 100 - inset * _SS)
     layer = Image.new("L", (big, big), 0)
     ImageDraw.Draw(layer).rounded_rectangle((inset * _SS, inset * _SS, big - 1 - inset * _SS, big - 1 - inset * _SS), radius=radius, fill=255)
-    return layer.resize((size, size), Image.LANCZOS)
+    return layer.reduce(_SS)
 
 
 def _outline(size, radius_pct, width, inset=0.0):
@@ -218,7 +218,7 @@ def _outline(size, radius_pct, width, inset=0.0):
     ImageDraw.Draw(layer).rounded_rectangle(
         (inset * _SS, inset * _SS, big - 1 - inset * _SS, big - 1 - inset * _SS), radius=radius, outline=255, width=max(1, round(width * _SS))
     )
-    return layer.resize((size, size), Image.LANCZOS)
+    return layer.reduce(_SS)
 
 
 def _scale(mask, factor):
@@ -256,13 +256,6 @@ def _radial(size, cx, cy, radius):
 
 def _lighten(rgb, amount):
     return tuple(min(255, int(c + (255 - c) * amount)) for c in rgb)
-
-
-def _bevel(size, radius_pct, mask, depth):
-    """Strongest right at the inside of the edge, fading inwards over `depth` px -
-    the same width all the way round, corners included."""
-    inner = _shape(size, radius_pct, depth).filter(ImageFilter.GaussianBlur(depth * 0.55))
-    return ImageChops.subtract(mask, inner)
 
 
 def render_face(icon, radius_pct=0, style="glass", colour_style="diagonal", vibrancy=DEFAULT_VIBRANCY, colour=None, colour2=None):

@@ -1,0 +1,1 @@
+import{r as t}from"./index-b24JB6Mx.js";function i(r){const e=t.createContext(null);return[e,()=>{const n=t.use(e);if(n===null)throw new Error(r);return n}]}const o=t.createContext({dir:"ltr",toggleDirection:()=>{},setDirection:()=>{}});function u(){return t.use(o)}export{i as c,u};

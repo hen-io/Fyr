@@ -71,3 +71,30 @@ def test_server_defaults_are_sanitised(admin, visitor, anon):
     assert anon.get("/api/defaults").get_json()["defaults"] == {"language": "en", "siteTitle": "T", "roundness": 12.5}
     assert visitor.put("/api/defaults", json={"defaults": {}}).status_code == 403
     admin.put("/api/defaults", json={"defaults": {}})
+
+
+def test_dashboard_pages(admin, anon, visitor):
+    assert admin.post("/api/widgets/reset").status_code == 200
+    assert anon.get("/api/widgets").get_json()["pages"] == [{"id": "main", "name": "Hjem"}]
+
+    widgets = [
+        {"id": "a", "type": "clock", "x": 0, "y": 0, "w": 2, "h": 1},  # no page: the first one
+        {"id": "b", "type": "clock", "x": 0, "y": 0, "w": 2, "h": 1, "page": "media"},
+        {"id": "c", "type": "clock", "x": 0, "y": 0, "w": 2, "h": 1, "page": "gone"},
+        {"id": "f", "type": "clock", "x": 0, "y": 0, "w": 2, "h": 1, "zone": "footer", "page": "media"},
+    ]
+    pages = [{"id": "main", "name": "Hjem"}, {"id": "media", "name": " Media "}, {"id": "Bad Id!", "name": "x"}, {"id": "media", "name": "twice"}, {"id": "empty", "name": ""}]
+    assert visitor.put("/api/widgets", json={"widgets": widgets, "pages": pages}).status_code == 403
+    assert admin.put("/api/widgets", json={"widgets": widgets, "pages": pages}).status_code == 200
+    saved = anon.get("/api/widgets").get_json()
+    assert saved["pages"] == [{"id": "main", "name": "Hjem"}, {"id": "media", "name": "Media"}]
+    assert {w["id"]: w.get("page") for w in saved["widgets"]} == {"a": "main", "b": "media", "c": "main", "f": None}
+
+    # a save that does not mention pages leaves them alone
+    assert admin.put("/api/widgets", json={"widgets": saved["widgets"]}).status_code == 200
+    assert len(anon.get("/api/widgets").get_json()["pages"]) == 2
+    # removing a page keeps its widgets, on the first page; the last page cannot go
+    assert admin.put("/api/widgets", json={"widgets": saved["widgets"], "pages": []}).status_code == 200
+    after = anon.get("/api/widgets").get_json()
+    assert after["pages"] == [{"id": "main", "name": "Hjem"}] and {w.get("page") for w in after["widgets"] if not w.get("zone")} == {"main"}
+    admin.post("/api/widgets/reset")

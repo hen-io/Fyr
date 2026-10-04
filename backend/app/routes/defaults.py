@@ -42,6 +42,7 @@ _ALLOWED = {
     "language": str,
     "narrowLauncherLast": str,
     "headerSearch": str,
+    "searchEngine": str,
     "windowUrlState": str,
     "appLoader": str,
     "tileOpacity": int,

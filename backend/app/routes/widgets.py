@@ -15,6 +15,14 @@ widgets_bp = Blueprint("widgets", __name__)
 
 DEFAULT_GRID = {"columns": 12, "row_height": 90}
 
+# The dashboard can have several pages, each with its own widgets in the main
+# grid (the header and footer strips are shared). ui.conf: "pages" - a list of
+# {id, name}; a widget names its page in "page". A file from before pages has
+# neither: it is one page, and every widget is on it.
+DEFAULT_PAGES = [{"id": "main", "name": "Hjem"}]
+_PAGE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
+_MAX_PAGES = 12
+
 # Widgets poll every few seconds - the HA source's default cache window
 # (WEATHER_CACHE_TTL, minutes) is far too stale for a live sensor tile.
 WIDGET_MAX_AGE = 8
@@ -61,12 +69,29 @@ def _clean_grid(raw, existing):
     return grid
 
 
-def _clean_widgets(raw, columns):
+def _clean_pages(raw):
+    """At least one page, each with a unique id and a name; anything else in
+    the list is dropped."""
+    pages = []
+    for page in raw if isinstance(raw, list) else []:
+        if not isinstance(page, dict):
+            continue
+        page_id = str(page.get("id") or "").strip().lower()
+        name = str(page.get("name") or "").strip()[:40]
+        if not _PAGE_ID.match(page_id) or not name or any(p["id"] == page_id for p in pages):
+            continue
+        pages.append({"id": page_id, "name": name})
+    return pages[:_MAX_PAGES] or [dict(page) for page in DEFAULT_PAGES]
+
+
+def _clean_widgets(raw, columns, pages=None):
     """Saved widgets come from the editor UI (or a hand-edited file) - make
     sure every one has a unique string id and a type, fits inside the grid,
-    and is a plain dict. Everything else (label, source, buttons, ...) is
-    type-specific config the frontend's widget registry owns, so it's
-    passed through untouched rather than duplicating every schema here."""
+    is on a page that exists, and is a plain dict. Everything else (label,
+    source, buttons, ...) is type-specific config the frontend's widget
+    registry owns, so it's passed through untouched rather than duplicating
+    every schema here."""
+    page_ids = [page["id"] for page in pages or DEFAULT_PAGES]
     seen = set()
     cleaned = []
     for widget in raw:
@@ -82,6 +107,10 @@ def _clean_widgets(raw, columns):
         widget = _normalize_geometry({**widget, "id": wid, "type": wtype})
         widget["w"] = min(widget["w"], columns)
         widget["x"] = min(widget["x"], columns - widget["w"])
+        if widget.get("zone") in ("header", "footer"):
+            widget.pop("page", None)  # the strips are on every page
+        elif widget.get("page") not in page_ids:
+            widget["page"] = page_ids[0]  # a deleted page's widgets are kept, on the first page
         cleaned.append(widget)
     return cleaned
 
@@ -126,6 +155,10 @@ def _dashboard(cfg):
     grid = _clean_grid(None, data.get("grid"))
     widgets = [_normalize_geometry(w) for w in (data.get("widgets") or []) if isinstance(w, dict)]
     return grid, widgets
+
+
+def _pages(cfg):
+    return _clean_pages(_load_yaml(_layout_path(cfg), {}).get("pages"))
 
 
 def _visible(widget):
@@ -230,7 +263,7 @@ def _collect(widget):
 @widgets_bp.route("/api/widgets", methods=["GET"])
 def list_widgets():
     grid, widgets = _dashboard(current_app.config)
-    return jsonify({"grid": grid, "widgets": [w for w in widgets if _visible(w)]})
+    return jsonify({"grid": grid, "pages": _pages(current_app.config), "widgets": [w for w in widgets if _visible(w)]})
 
 
 @widgets_bp.route("/api/widgets", methods=["PUT"])
@@ -243,7 +276,10 @@ def put_widgets():
     existing = _load_yaml(path, {})
     grid = _clean_grid(body.get("grid"), existing.get("grid"))
     existing["grid"] = grid
-    existing["widgets"] = _clean_widgets(body["widgets"], grid["columns"])
+    # (a save from before pages says nothing about them: they stay as they are)
+    pages = _clean_pages(body["pages"] if "pages" in body else existing.get("pages"))
+    existing["pages"] = pages
+    existing["widgets"] = _clean_widgets(body["widgets"], grid["columns"], pages)
     # An explicit save is the admin's statement of what the dashboard holds:
     # never seed the default footer widgets on top of it afterwards.
     existing["zones_seeded"] = True
@@ -259,6 +295,7 @@ def reset_widgets():
     path = _layout_path(current_app.config)
     existing = _load_yaml(path, {})
     existing["grid"] = dict(DEFAULT_GRID)
+    existing["pages"] = [dict(page) for page in DEFAULT_PAGES]
     existing["widgets"] = []
     existing["zones_seeded"] = True
     _save_yaml(path, existing)

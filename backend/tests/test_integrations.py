@@ -223,7 +223,7 @@ def test_status_summary_lists_only_what_the_caller_may_see(base, admin, anon):
     assert {item["title"]: item["status"] for item in mine["items"]} == {"Up": "up", "Down": "down", "Members": "up"}
     public = anon.get("/api/status/summary").get_json()
     assert [item["title"] for item in public["items"]] == ["Up", "Down"] and public["total"] == 2
-    assert all(set(item) == {"title", "status"} for item in public["items"])  # never the internal address
+    assert all(set(item) == {"title", "status", "ms"} for item in public["items"])  # never the internal address
     admin.put("/api/apps", json={"apps": [], "default_mode": "window", "categories": {}})
     assert anon.get("/api/status/summary").get_json() == {"items": [], "up": 0, "down": 0, "total": 0}
 

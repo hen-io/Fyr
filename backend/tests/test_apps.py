@@ -76,6 +76,32 @@ def test_server_info_lists_versions_and_dependencies(admin):
     assert all(isinstance(version, str) and version for version in info["dependencies"].values())
 
 
+def test_framing_verdict_from_an_apps_headers():
+    from app.routes.status import _framing
+
+    own = "fyr.example"
+    assert _framing(None, own) is None  # the app did not answer
+    assert _framing({"xfo": None, "ancestors": None, "host": "a.example"}, own) == "ok"
+    assert _framing({"xfo": "DENY", "ancestors": None, "host": "a.example"}, own) == "blocked"
+    assert _framing({"xfo": "SAMEORIGIN", "ancestors": None, "host": "a.example"}, own) == "blocked"
+    assert _framing({"xfo": "SAMEORIGIN", "ancestors": None, "host": "fyr.example"}, own) == "ok"
+    assert _framing({"xfo": None, "ancestors": ["'none'"], "host": "a.example"}, own) == "blocked"
+    assert _framing({"xfo": None, "ancestors": ["'self'"], "host": "a.example"}, own) == "blocked"
+    assert _framing({"xfo": "DENY", "ancestors": ["https://fyr.example"], "host": "a.example"}, own) == "ok"  # frame-ancestors wins
+    assert _framing({"xfo": None, "ancestors": ["https://*.example"], "host": "a.example"}, own) == "ok"
+    assert _framing({"xfo": None, "ancestors": ["*"], "host": "a.example"}, own) == "ok"
+
+
+def test_status_reports_time_history_and_framing(admin, anon):
+    admin.put("/api/apps", json={"apps": APPS, "categories": CATEGORIES})
+    body = anon.get("/api/status?url=http://127.0.0.1:9/app").get_json()
+    assert body["status"] == "down" and body["ms"] is None and body["history"][-1] == 0 and body["frame"] is None
+    assert anon.get("/api/status?url=http://127.0.0.1:9/app&frame=http://127.0.0.1:9/secret").get_json()["frame"] is None  # a hidden app is not probed
+    assert "Secret" not in anon.get("/api/status/framing").get_json()
+    summary = anon.get("/api/status/summary").get_json()
+    assert all("ms" in item for item in summary["items"])
+
+
 def test_icon_upload_accepts_only_real_images(admin, visitor, anon, app):
     png = make_png()
     assert upload(admin, "/api/icons", "ok.png", png).status_code == 201

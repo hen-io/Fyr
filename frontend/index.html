@@ -1,9 +1,9 @@
 <!doctype html>
 <html lang="no">
   <head>
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-8+TV80iO9LZwvlLiueZy9wnXNWnP5tP4elAATuhycIk=' 'sha256-Mo6KGlWYrA0x5im0pWetNKCJei8AlGukB5aZrB12Qxk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self'; frame-src https: http:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-QE6mNmAJZPDRcW58ZqAEpN4iUG4cmKxdr+E4pmPo17Q=' 'sha256-Mo6KGlWYrA0x5im0pWetNKCJei8AlGukB5aZrB12Qxk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self'; frame-src https: http:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'" />
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/rocket-logo.svg" />
+    <link rel="icon" type="image/png" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fyr</title>
     <script>
@@ -36,6 +36,7 @@
         if (srv.windowOpacity !== undefined) root.style.setProperty("--window-alpha", String(srv.windowOpacity / 100));
         if (srv.tileBlur !== undefined) root.style.setProperty("--tile-blur", srv.tileBlur + "px");
         if (srv.splashMode === "off") root.classList.add("no-splash");
+        if (srv.splashStyle) root.setAttribute("data-splash", srv.splashStyle);
       } catch (e) {}
     </script>
     <style>
@@ -138,6 +139,7 @@
       .fs-orb img {
         width: 64px;
         height: 64px;
+        object-fit: contain;
         filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.35));
         animation: fsFloat 2.6s ease-in-out infinite;
       }
@@ -168,18 +170,58 @@
         animation: fsSlide 1.35s ease-in-out infinite;
       }
 
+      /* The other animations (an admin setting, data-splash on <html>). */
+      .fs-dots { display: none; align-items: center; gap: 9px; height: 26px; }
+      .fs-dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--accent, #ffb347); animation: fsBounce 1s ease-in-out infinite; }
+      .fs-dots i:nth-child(2) { animation-delay: 0.12s; }
+      .fs-dots i:nth-child(3) { animation-delay: 0.24s; }
+      .fs-dots i:nth-child(4) { animation-delay: 0.36s; }
+      .fs-dots i:nth-child(5) { animation-delay: 0.48s; }
+      :root:is([data-splash="dots"], [data-splash="bars"]) .fs-bar { display: none; }
+      :root:is([data-splash="dots"], [data-splash="bars"]) .fs-dots { display: flex; }
+      :root:is([data-splash="dots"], [data-splash="bars"]) .fs-orb::before { display: none; }
+      :root[data-splash="dots"] .fs-dots i:nth-child(n + 4) { display: none; }
+      :root[data-splash="bars"] .fs-dots i { width: 6px; height: 24px; border-radius: 3px; animation-name: fsBars; }
+      :root:is([data-splash="ring"], [data-splash="pulse"], [data-splash="minimal"]) .fs-orb { background: none; border-color: transparent; box-shadow: none; }
+      :root[data-splash="ring"] .fs-orb::before {
+        inset: 0;
+        background: none;
+        -webkit-mask: none;
+        mask: none;
+        border: 4px solid rgb(127 127 127 / 0.25);
+        border-top-color: var(--accent, #ffb347);
+        animation: fsSpin 0.9s linear infinite;
+      }
+      :root[data-splash="pulse"] .fs-orb::before {
+        inset: 14px;
+        background: none;
+        -webkit-mask: none;
+        mask: none;
+        border: 2px solid var(--accent, #ffb347);
+        animation: fsRipple 1.6s ease-out infinite;
+      }
+      :root[data-splash="pulse"] .fs-orb img { animation: fsBeat 1.6s ease-in-out infinite; }
+      :root[data-splash="minimal"] .fs-pool,
+      :root[data-splash="minimal"] .fs-card::before,
+      :root[data-splash="minimal"] .fs-orb::before { display: none; }
+      :root[data-splash="minimal"] .fs-card { background: none; border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+      @keyframes fsBounce { 0%, 80%, 100% { transform: translateY(5px) scale(0.75); opacity: 0.45; } 40% { transform: translateY(-6px) scale(1); opacity: 1; } }
+      @keyframes fsBars { 0%, 100% { transform: scaleY(0.35); opacity: 0.5; } 50% { transform: scaleY(1); opacity: 1; } }
+      @keyframes fsRipple { from { transform: scale(0.75); opacity: 0.9; } to { transform: scale(1.45); opacity: 0; } }
+      @keyframes fsBeat { 0%, 100% { transform: scale(0.92); } 50% { transform: scale(1.08); } }
+
       @keyframes fsSpin { to { transform: rotate(360deg); } }
       @keyframes fsFloat { 0%, 100% { transform: translateY(2px); } 50% { transform: translateY(-4px); } }
       @keyframes fsSlide { from { transform: translateX(-110%); } to { transform: translateX(330%); } }
       @keyframes fsDrift { from { transform: translate(0, 0) scale(1); } to { transform: translate(6vmax, 4vmax) scale(1.15); } }
       @keyframes fsRise { from { opacity: 0; transform: translateY(14px) scale(0.96); } to { opacity: 1; transform: none; } }
       @media (prefers-reduced-motion: reduce) {
-        .fs-pool, .fs-card, .fs-orb img, .fs-bar span { animation: none; }
+        .fs-pool, .fs-card, .fs-orb img, .fs-bar span, .fs-dots i { animation: none; }
         .fs-orb::before { animation-duration: 4s; }
       }
     </style>
-    <script type="module" crossorigin src="/assets/index-BpZL8DLR.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-8MCcxR3p.css">
+    <script type="module" crossorigin src="/assets/index-Br4Dg-IE.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Du_pyCSw.css">
   </head>
   <body>
     <div id="fyr-splash" role="status" aria-live="polite">
@@ -187,9 +229,10 @@
       <div class="fs-pool b"></div>
       <div class="fs-pool c"></div>
       <div class="fs-card">
-        <div class="fs-orb"><img src="/rocket-logo.svg" alt="" /></div>
+        <div class="fs-orb"><img src="/logo.png" alt="" /></div>
         <div class="fs-title" id="fyr-splash-title">Fyr</div>
         <div class="fs-bar"><span></span></div>
+        <div class="fs-dots"><i></i><i></i><i></i><i></i><i></i></div>
       </div>
     </div>
     <script>

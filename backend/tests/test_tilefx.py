@@ -49,12 +49,6 @@ def test_signed_urls_render_and_nothing_else_does(admin, anon):
     admin.put("/api/defaults", json={"defaults": {}})
 
 
-def test_browser_mode_issues_no_urls(admin, anon):
-    _setup(admin, {"tileTint": "on", "tileFxMode": "client"})
-    assert _fx(anon) is None
-    admin.put("/api/defaults", json={"defaults": {}})
-
-
 def test_per_app_outline_overrides_the_default(admin, anon):
     _setup(admin, {"logoStrokeWidth": 3})
     admin.put("/api/apps", json={"apps": [{"title": "Badge", "url": "https://b.example", "icon": "badge.png", "iconStroke": 0}]})
@@ -177,7 +171,7 @@ def test_an_app_can_have_its_own_badge_colours(admin, anon):
     assert tilefx.render_logo(icon, True, 2, "auto", "dark", "", "1e90ff").mode == "RGBA"
 
     base = {"title": "Mono", "url": "https://mono.example", "icon": "mono.png"}
-    admin.put("/api/defaults", json={"defaults": {"tileTint": "on", "tileFxMode": "server"}})
+    admin.put("/api/defaults", json={"defaults": {"tileTint": "on"}})
     for bad in ("blue", "#12345", "#gggggg", 5):
         assert admin.put("/api/apps", json={"apps": [{**base, "badgeColor": bad}]}).status_code == 400
     assert admin.put("/api/apps", json={"apps": [base]}).status_code == 200

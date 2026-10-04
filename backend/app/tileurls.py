@@ -18,7 +18,6 @@ from . import tilefx
 # `default` of the same key in the frontend's constants/settings.js (the
 # backend test suite compares the two).
 SETTING_DEFAULTS = {
-    "tileFxMode": "server",
     "tileTint": "off",
     "tileBadgeStyle": "glass",
     "tileBadgeColor": "diagonal",
@@ -111,11 +110,11 @@ def settings(defaults):
 
 def urls_for(app, chosen, icons_dir, secret):
     """{"face": url|None, "logo": url, "round": percent} for one app, or None
-    when it gets no server-drawn effects (browser mode, no icon file, or
-    neither tint nor outline is on). An SVG icon gets the badge only: its logo
+    when it gets no drawn effects (no icon file, or neither tint nor outline
+    is on). An SVG icon gets the badge only: its logo
     stays the SVG itself, drawn (and outlined) by the browser."""
     icon = app.get("icon")
-    if chosen["tileFxMode"] != "server" or not isinstance(icon, str) or not icon.lower().endswith(_RASTER + _VECTOR):
+    if not isinstance(icon, str) or not icon.lower().endswith(_RASTER + _VECTOR):
         return None
     tint = chosen["tileTint"] == "on"
     vector = icon.lower().endswith(_VECTOR)

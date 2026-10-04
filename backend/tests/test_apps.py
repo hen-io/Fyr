@@ -60,6 +60,15 @@ def test_status_only_checks_urls_that_are_on_the_dashboard(admin, anon):
     assert anon.get("/api/status?url=http://x:99999999/").status_code == 400
 
 
+def test_apps_keep_their_search_keywords(admin):
+    app = {"title": "Tagged", "url": "https://t.example", "keywords": " film, serier  tv "}
+    assert admin.put("/api/apps", json={"apps": [app]}).status_code == 200
+    assert admin.get("/api/apps").get_json()["apps"][0]["keywords"] == "film, serier  tv"
+    assert admin.put("/api/apps", json={"apps": [{**app, "keywords": ["film"]}]}).status_code == 400
+    assert admin.put("/api/apps", json={"apps": [{**app, "keywords": "x" * 501}]}).status_code == 400
+    admin.put("/api/apps", json={"apps": []})
+
+
 def test_icon_upload_accepts_only_real_images(admin, visitor, anon, app):
     png = make_png()
     assert upload(admin, "/api/icons", "ok.png", png).status_code == 201

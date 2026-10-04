@@ -89,7 +89,7 @@ def _save_yaml(path, data):
 
 _ICON_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.(png|jpe?g|webp|gif|ico|svg)$")
 _STROKE_COLORS = ("ink", "accent", "white", "black", "auto")
-_APP_KEYS = ("title", "url", "internalUrl", "icon", "category", "visibility", "default_mode")
+_APP_KEYS = ("title", "url", "internalUrl", "icon", "category", "visibility", "default_mode", "keywords")
 
 
 def _clean_apps(raw):

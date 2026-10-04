@@ -17,7 +17,6 @@ _ALLOWED = {
     "theme": str,
     "splashMode": str,
     "splashSeconds": (int, float),
-    "tileFxMode": str,  # no longer used (badges are always drawn here); still accepted so an older ui.conf saves
     "tileBadgeStyle": str,
     "tileBadgeColor": str,
     "tileBadgeVibrancy": int,
@@ -45,7 +44,6 @@ _ALLOWED = {
     "headerSearch": str,
     "windowUrlState": str,
     "appLoaderStyle": str,
-    "splashStyle": str,
     "tileOpacity": int,
     "tileBlur": int,
     "gridMargin": int,

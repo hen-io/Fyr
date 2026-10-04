@@ -1,8 +1,8 @@
 import re
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, session
 
-from .. import connections
+from .. import audit, connections
 from ..auth import require_role
 from ..datasources.registry import CATALOG_BY_ID
 
@@ -110,4 +110,6 @@ def update_integration(integration_id):
         saved["enabled"] = bool(body["enabled"])
     connections.save(data_dir, integration_id, saved)
     registry.reload(integration_id)
+    # (which fields were sent, never what they hold)
+    audit.record("integration_saved", integration=integration_id, enabled=bool(saved.get("enabled")), fields=", ".join(sorted(set(incoming) | clear)) or "-", by=session["username"])
     return jsonify(_entry(integration_id))

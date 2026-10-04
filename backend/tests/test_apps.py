@@ -102,6 +102,22 @@ def test_status_reports_time_history_and_framing(admin, anon):
     assert all("ms" in item for item in summary["items"])
 
 
+def test_an_app_can_be_added_from_its_address(admin, visitor, anon):
+    admin.put("/api/apps", json={"apps": [{"title": "Example", "url": "https://x.example", "category": "Open"}], "categories": {"Open": {}}})
+    new = {"url": "http://127.0.0.1:9/some/path"}
+    assert anon.post("/api/apps/add", json=new).status_code == 401
+    assert visitor.post("/api/apps/add", json=new).status_code == 403
+    for bad in ({"url": "javascript:alert(1)"}, {"url": "ftp://files.example"}, {"url": ""}, {"url": "http://ok.example", "category": "Nope"}):
+        assert admin.post("/api/apps/add", json=bad).status_code == 400
+    added = admin.post("/api/apps/add", json=new)
+    assert added.status_code == 201 and added.get_json() == {"title": "127.0.0.1", "icon": None}  # nothing answers there: no logo
+    assert admin.post("/api/apps/add", json={"url": "https://www.example.com", "category": "Open"}).get_json()["title"] == "Example 2"  # the name was taken
+    apps = {a["title"]: a for a in admin.get("/api/apps?all=1").get_json()["apps"]}
+    assert apps["127.0.0.1"]["url"] == new["url"] and "category" not in apps["127.0.0.1"]
+    assert apps["Example 2"]["category"] == "Open" and apps["Example"]["url"] == "https://x.example"
+    admin.put("/api/apps", json={"apps": [], "categories": {}})
+
+
 def test_icon_upload_accepts_only_real_images(admin, visitor, anon, app):
     png = make_png()
     assert upload(admin, "/api/icons", "ok.png", png).status_code == 201

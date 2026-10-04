@@ -5,15 +5,22 @@ import threading
 import time
 import uuid
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, session
 
+from .. import audit
 from ..auth import current_user, require_role
 from ..datasources.registry import INTEGRATION_WIDGETS
 from .config import _load_yaml, _save_yaml, _layout_path
 
 widgets_bp = Blueprint("widgets", __name__)
 
-DEFAULT_GRID = {"columns": 12, "row_height": 90}
+# The grid's rows are not a setting: one row is a quarter of a column's width
+# (the frontend works out the pixels), so four rows are as tall as one column
+# is wide and a layout keeps its proportions on every screen. "rows": "quarter"
+# marks a ui.conf laid out that way; one from before, with a fixed
+# "row_height" in pixels, is converted the first time it is read.
+DEFAULT_GRID = {"columns": 12, "rows": "quarter"}
+_OLD_ROW_HEIGHT = 90
 
 # The dashboard can have several pages, each with its own widgets in the main
 # grid (the header and footer strips are shared). ui.conf: "pages" - a list of
@@ -60,13 +67,44 @@ def _normalize_geometry(widget):
 def _clean_grid(raw, existing):
     grid = {**DEFAULT_GRID, **(existing or {})}
     if isinstance(raw, dict):
-        for key, lo, hi in (("columns", 1, 24), ("row_height", 30, 300)):
+        try:
+            grid["columns"] = min(24, max(1, int(raw.get("columns", grid["columns"]))))
+        except (TypeError, ValueError):
+            pass
+    try:
+        columns = min(24, max(1, int(grid["columns"])))
+    except (TypeError, ValueError):
+        columns = DEFAULT_GRID["columns"]
+    return {"columns": columns, "rows": "quarter"}
+
+
+def _to_quarter_rows(data):
+    """A layout from when a row was `row_height` pixels: every main-grid widget
+    keeps its place and its size on screen by counting in the new, smaller
+    rows (a whole number of them per old row, so nothing ends up overlapping).
+    Returns True when it changed something."""
+    grid = data.get("grid") if isinstance(data.get("grid"), dict) else {}
+    if grid.get("rows") == "quarter":
+        return False
+    widgets = [w for w in (data.get("widgets") or []) if isinstance(w, dict)]
+    if not widgets and "row_height" not in grid:
+        return False  # nothing laid out yet
+    try:
+        old = float(grid.get("row_height", _OLD_ROW_HEIGHT))
+    except (TypeError, ValueError):
+        old = _OLD_ROW_HEIGHT
+    # an old row and its 24 px gap, against a new row and its gap on a typical screen (about 28.5 px)
+    factor = max(1, round((old + 24) / 28.5))
+    for widget in widgets:
+        if widget.get("zone") in ("header", "footer"):
+            continue
+        for key in ("y", "h"):
             try:
-                value = int(raw.get(key, grid[key]))
+                widget[key] = int(widget.get(key, 1 if key == "h" else 0)) * factor
             except (TypeError, ValueError):
                 continue
-            grid[key] = min(hi, max(lo, value))
-    return grid
+    data["grid"] = {"columns": grid.get("columns", DEFAULT_GRID["columns"]), "rows": "quarter"}
+    return True
 
 
 def _clean_pages(raw):
@@ -147,7 +185,8 @@ def _dashboard(cfg):
     happened to be positioned below it). The launcher is a separate,
     naturally-sized section the frontend always renders after this grid."""
     data = _load_yaml(_layout_path(cfg), {})
-    if _seed_footer(data, cfg):
+    seeded = _seed_footer(data, cfg)
+    if _to_quarter_rows(data) or seeded:
         try:
             _save_yaml(_layout_path(cfg), data)
         except OSError:
@@ -284,6 +323,7 @@ def put_widgets():
     # never seed the default footer widgets on top of it afterwards.
     existing["zones_seeded"] = True
     _save_yaml(path, existing)
+    audit.record("dashboard_saved", widgets=len(existing["widgets"]), pages=len(pages), by=session["username"])
     return jsonify({"ok": True})
 
 
@@ -299,6 +339,7 @@ def reset_widgets():
     existing["widgets"] = []
     existing["zones_seeded"] = True
     _save_yaml(path, existing)
+    audit.record("dashboard_reset", by=session["username"])
     return jsonify({"ok": True})
 
 

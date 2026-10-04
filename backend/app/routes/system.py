@@ -6,8 +6,9 @@ import sys
 import threading
 import time
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, session
 
+from .. import audit
 from ..auth import require_role
 from ..meta import load_meta
 
@@ -93,6 +94,7 @@ def restart_container():
         return jsonify({"error": "not_in_container"}), 501
     # Delayed on a background thread so this response actually reaches the
     # browser before the container starts going down.
+    audit.record("restart_requested", by=session["username"])
     threading.Thread(target=_restart_after, args=(1,), daemon=True).start()
     return jsonify({"ok": True})
 
@@ -101,11 +103,14 @@ def restart_container():
 # supervisord writes each service's output to a size-rotated file here (and a
 # tail process copies it to the container's stdout, so `docker logs` still works).
 LOG_DIR = os.environ.get("FYR_LOG_DIR", "/var/log/fyr")
-LOG_SOURCES = {"backend": "backend.log", "nginx": "nginx.log"}
+LOG_SOURCES = {"backend": "backend.log", "frontend": "backend.log", "nginx": "nginx.log"}
+# What browsers report (routes/clientlog.py) is written to the backend's log
+# with this mark: the "frontend" source is those lines, "backend" the rest.
+_CLIENT_MARK = " CLIENT "
 _TAIL_BYTES = 1024 * 1024
 
 
-def _tail_lines(path, count):
+def _tail_lines(path, count, keep=None):
     """The last `count` lines of a text file, read from its end."""
     try:
         with open(path, "rb") as handle:
@@ -116,14 +121,17 @@ def _tail_lines(path, count):
     except OSError:
         return []
     lines = data.decode("utf-8", errors="replace").splitlines()
+    if keep is not None:
+        lines = [line for line in lines if keep(line)]
     return lines[-count:]
 
 
 def _source_lines(name, count):
     path = os.path.join(LOG_DIR, LOG_SOURCES[name])
-    lines = _tail_lines(path, count)
+    keep = {"frontend": lambda line: _CLIENT_MARK in line, "backend": lambda line: _CLIENT_MARK not in line}.get(name)
+    lines = _tail_lines(path, count, keep)
     if len(lines) < count:  # a fresh rotation: continue from the previous file
-        lines = _tail_lines(path + ".1", count - len(lines)) + lines
+        lines = _tail_lines(path + ".1", count - len(lines), keep) + lines
     return lines
 
 

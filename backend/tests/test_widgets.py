@@ -13,7 +13,7 @@ WIDGETS = [
 def test_widgets_roundtrip_and_visibility(admin, anon, visitor):
     assert admin.put("/api/widgets", json={"widgets": WIDGETS, "grid": {"columns": 99, "row_height": 5}}).status_code == 200
     seen = anon.get("/api/widgets").get_json()
-    assert seen["grid"] == {"columns": 24, "row_height": 30}  # clamped
+    assert seen["grid"] == {"columns": 24, "rows": "quarter"}  # clamped; a row height is no longer a setting
     assert [w["id"] for w in seen["widgets"]] == ["a", "b"]
     assert anon.get("/api/widget/p").status_code == 404
     assert visitor.get("/api/widget/p").status_code == 200
@@ -97,4 +97,27 @@ def test_dashboard_pages(admin, anon, visitor):
     assert admin.put("/api/widgets", json={"widgets": saved["widgets"], "pages": []}).status_code == 200
     after = anon.get("/api/widgets").get_json()
     assert after["pages"] == [{"id": "main", "name": "Hjem"}] and {w.get("page") for w in after["widgets"] if not w.get("zone")} == {"main"}
+    admin.post("/api/widgets/reset")
+
+
+def test_a_layout_with_pixel_rows_is_converted_once(admin, anon, app):
+    import yaml
+
+    path = os.path.join(app.config["CONFIG_DIR"], "ui.conf")
+    old = {
+        "zones_seeded": True,
+        "grid": {"columns": 12, "row_height": 90},
+        "widgets": [
+            {"id": "a", "type": "clock", "x": 0, "y": 0, "w": 3, "h": 1},
+            {"id": "b", "type": "clock", "x": 0, "y": 1, "w": 3, "h": 2},
+            {"id": "f", "type": "clock", "x": 0, "y": 0, "w": 2, "h": 1, "zone": "footer"},
+        ],
+    }
+    with open(path, "w", encoding="utf-8") as handle:
+        yaml.safe_dump(old, handle)
+    seen = anon.get("/api/widgets").get_json()
+    assert seen["grid"] == {"columns": 12, "rows": "quarter"}
+    assert {w["id"]: (w["y"], w["h"]) for w in seen["widgets"]} == {"a": (0, 4), "b": (4, 8), "f": (0, 1)}
+    again = anon.get("/api/widgets").get_json()  # converted once, not on every read
+    assert {w["id"]: (w["y"], w["h"]) for w in again["widgets"]} == {"a": (0, 4), "b": (4, 8), "f": (0, 1)}
     admin.post("/api/widgets/reset")

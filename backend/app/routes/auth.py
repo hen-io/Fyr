@@ -98,7 +98,11 @@ def put_my_prefs():
     body = request.get_json(silent=True)
     if not isinstance(body, dict) or len(json.dumps(body)) > 65536:
         return jsonify({"error": "invalid_body"}), 400
+    before = get_prefs(session["username"], current_app.config)
     set_prefs(session["username"], body, current_app.config)
+    changed = sorted(key for key in set(before) | set(body) if before.get(key) != body.get(key))
+    if changed:
+        audit.record("personal_settings_saved", user=session["username"], changed=", ".join(changed))
     return jsonify({"ok": True})
 
 
@@ -106,6 +110,7 @@ def put_my_prefs():
 @require_role()
 def reset_my_prefs():
     clear_prefs(current_app.config, session["username"])
+    audit.record("personal_settings_reset", user=session["username"])
     return jsonify({"ok": True})
 
 

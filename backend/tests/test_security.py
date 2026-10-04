@@ -1,5 +1,6 @@
 """Cross-cutting protections: who may call what, forged requests, bad input."""
 
+import logging
 import os
 
 import pytest
@@ -134,6 +135,51 @@ def test_logs_endpoint(admin, app):
     assert body["available"] and len(body["lines"]) == 25 and body["lines"][-1] == "line 299"
     assert len(admin.get("/api/system/logs?lines=1").get_json()["lines"]) == 10  # lower bound
     assert admin.get("/api/system/logs?source=../etc").status_code == 400
+
+
+class _Lines(logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.lines = []
+
+    def emit(self, record):
+        self.lines.append(f"{record.name.split('.')[-1].upper()} {record.getMessage()}")
+
+
+def test_changes_and_client_reports_are_logged(admin, anon):
+    seen = _Lines()
+    loggers = [logging.getLogger("fyr.audit"), logging.getLogger("fyr.client")]
+    for logger in loggers:
+        logger.addHandler(seen)
+    try:
+        assert admin.put("/api/defaults", json={"defaults": {"palette": "candy"}}).status_code == 200
+        assert admin.put("/api/defaults", json={"defaults": {"palette": "grape", "gap": 14}}).status_code == 200
+        assert 'AUDIT default_changed setting="palette" was="candy" now="grape" by="admin1"' in seen.lines
+        assert 'AUDIT default_changed setting="gap" was="(built-in)" now="14" by="admin1"' in seen.lines
+        assert admin.put("/api/defaults", json={"defaults": {}}).status_code == 200
+
+        assert anon.post("/api/client-log", json={"event": "visit", "screen": "1920x1080", "secret": "x"}).status_code == 200
+        assert anon.post("/api/client-log", json={"event": "app_opened", "app": "Evil\nAUDIT login user=root"}).status_code == 200
+        assert anon.post("/api/client-log", json={"event": "made_up"}).status_code == 400
+        client = [line for line in seen.lines if line.startswith("CLIENT")]
+        assert client[0].startswith('CLIENT visit user="-"') and 'screen="1920x1080"' in client[0] and "secret" not in client[0]
+        assert len(client) == 2 and "\n" not in client[1] and "Evil\\nAUDIT" in client[1]  # the line break is escaped: no forged second line
+        answers = [anon.post("/api/client-log", json={"event": "visit"}).status_code for _ in range(60)]
+        assert 429 in answers  # a ceiling per address
+    finally:
+        for logger in loggers:
+            logger.removeHandler(seen)
+
+
+def test_logs_are_split_into_backend_and_frontend(admin):
+    log_dir = os.environ["FYR_LOG_DIR"]
+    os.makedirs(log_dir, exist_ok=True)
+    with open(os.path.join(log_dir, "backend.log"), "w", encoding="utf-8") as handle:
+        handle.write("\n".join(f"2026-10-04 10:00:{i:02d} {'CLIENT visit' if i % 3 == 0 else 'AUDIT login'} n={i}" for i in range(30)))
+    frontend = admin.get("/api/system/logs?source=frontend&lines=50").get_json()["lines"]
+    backend = admin.get("/api/system/logs?source=backend&lines=50").get_json()["lines"]
+    assert len(frontend) == 10 and all(" CLIENT " in line for line in frontend)
+    assert len(backend) == 20 and not any(" CLIENT " in line for line in backend)
 
 
 def test_misc(anon, admin):

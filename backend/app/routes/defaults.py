@@ -1,5 +1,6 @@
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, session
 
+from .. import audit
 from ..auth import require_role
 from ..prefs import bump_epoch, clear_prefs, get_epoch
 from .config import _load_yaml, _save_yaml, _layout_path
@@ -49,6 +50,7 @@ _ALLOWED = {
     "tileOpacity": int,
     "tileBlur": int,
     "gridMargin": int,
+    "launcherMargin": int,
     "contentWidth": int,
     "fullscreenMargin": int,
 }
@@ -82,8 +84,13 @@ def put_defaults():
         return jsonify({"error": "invalid_body"}), 400
     path = _layout_path(current_app.config)
     existing = _load_yaml(path, {})
+    before = existing.get("defaults") or {}
     existing["defaults"] = _clean_defaults(body["defaults"])
     _save_yaml(path, existing)
+    for key in sorted(set(before) | set(existing["defaults"])):
+        old, new = before.get(key), existing["defaults"].get(key)
+        if old != new:
+            audit.record("default_changed", setting=key, was="(built-in)" if old is None else old, now="(built-in)" if new is None else new, by=session["username"])
     return jsonify({"ok": True})
 
 
@@ -96,4 +103,5 @@ def reset_all_user_prefs():
     overrides it has cached locally the next time it loads."""
     clear_prefs(current_app.config)
     epoch = bump_epoch(current_app.config)
+    audit.record("all_personal_settings_reset", by=session["username"])
     return jsonify({"ok": True, "epoch": epoch})

@@ -1,5 +1,8 @@
 import os
 import re
+import ssl
+import urllib.request
+from urllib.parse import urljoin, urlparse
 
 from flask import Blueprint, current_app, jsonify, request, send_from_directory, session
 
@@ -259,7 +262,112 @@ def put_apps():
         categories = ordered
     data = {"default_mode": default_mode, "categories": categories}
     _save_yaml(_apps_path(current_app.config), data)
+    titles = lambda cats: {app.get("title") for cat in (cats or {}).values() if isinstance(cat, dict) for app in cat.get("apps") or [] if isinstance(app, dict)}  # noqa: E731
+    was, now = titles(existing.get("categories")), titles(categories)
+    audit.record("apps_saved", apps=len(now), categories=len(categories), added=", ".join(sorted(now - was)) or "-", removed=", ".join(sorted(was - now)) or "-", by=session["username"])
     return jsonify({"ok": True})
+
+
+# --- adding an app from just its address (the search field's "add as app") ----------
+
+_ICON_LINK = re.compile(r"<link\b[^>]*>", re.I)
+_MAGIC = ((b"\x89PNG\r\n\x1a\n", "png"), (b"\xff\xd8\xff", "jpg"), (b"GIF8", "gif"), (b"\x00\x00\x01\x00", "ico"))
+
+
+def _fetch(url, limit):
+    """Up to `limit` bytes of an http(s) address an admin gave. Certificates
+    are not checked: internal apps are often self-signed, and what comes back
+    is only ever used after it has been verified to be an image."""
+    request_ = urllib.request.Request(url, headers={"User-Agent": "fyr-icon-fetch"})
+    with urllib.request.urlopen(request_, timeout=5, context=ssl._create_unverified_context()) as response:  # noqa: S323
+        if not response.geturl().lower().startswith(("http://", "https://")):
+            raise ValueError("left http")
+        return response.geturl(), response.read(limit + 1)[:limit]
+
+
+def _site_icon(url):
+    """The site's own icon, saved in the icons folder: (file name) or None.
+    Looks at the page's <link rel="...icon..."> tags (the large "apple touch"
+    one first - a 16 px favicon makes a poor logo), then /favicon.ico."""
+    candidates = []
+    try:
+        page_url, html = _fetch(url, 300_000)
+        text = html.decode("utf-8", "replace")
+        for tag in _ICON_LINK.findall(text):
+            rel = re.search(r'rel=["\']?([^"\'>]+)', tag, re.I)
+            href = re.search(r'href=["\']?([^"\'\s>]+)', tag, re.I)
+            if rel and href and "icon" in rel.group(1).lower():
+                candidates.append(("apple" not in rel.group(1).lower(), urljoin(page_url, href.group(1))))
+    except Exception:
+        page_url = url
+    ordered = [link for _late, link in sorted(candidates)] + [urljoin(page_url, "/favicon.ico")]
+    host = re.sub(r"[^A-Za-z0-9.-]", "_", urlparse(url).hostname or "site").strip(".") or "site"
+    for link in ordered[:6]:
+        if not link.lower().startswith(("http://", "https://")):
+            continue
+        try:
+            _final, data = _fetch(link, 1024 * 1024)
+            extension = next((ext for magic, ext in _MAGIC if data.startswith(magic)), "webp" if data[8:12] == b"WEBP" else None)
+            if not extension:
+                continue
+            verify_icon(data, extension)
+        except Exception:
+            continue
+        name = f"{host}.{extension}"
+        if not _ICON_NAME.match(name):
+            continue
+        os.makedirs(_icons_dir(), exist_ok=True)
+        with open(os.path.join(_icons_dir(), name), "wb") as handle:
+            handle.write(data)
+        return name
+    return None
+
+
+def _title_for(url, taken):
+    host = (urlparse(url).hostname or "app").removeprefix("www.")
+    base = host if re.fullmatch(r"[0-9.]+", host) else host.split(".")[0].replace("-", " ").title()
+    title, n = base[:70] or "App", 2
+    while title in taken:
+        title, n = f"{base[:70]} {n}", n + 1
+    return title
+
+
+@config_bp.route("/api/apps/add", methods=["POST"])
+@require_role("admin")
+def add_app():
+    """One new app from its address: named after the site, with the site's
+    icon as its logo (both can be changed afterwards in the admin panel)."""
+    body = request.get_json(silent=True)
+    url = body.get("url").strip() if isinstance(body, dict) and isinstance(body.get("url"), str) else ""
+    if not re.match(r"^https?://[^\s/]+", url) or len(url) > 500:
+        return jsonify({"error": "invalid_url"}), 400
+    data = _load_yaml(_apps_path(current_app.config), {})
+    if not isinstance(data.get("categories"), dict):
+        data["categories"] = {}
+    categories = data["categories"]
+    category = body.get("category")
+    if category in (None, ""):
+        category = _UNCATEGORIZED
+    elif category not in categories or category == _UNCATEGORIZED:
+        return jsonify({"error": "invalid_category"}), 400
+
+    app = {"title": _title_for(url, {a.get("title") for a in _flatten_apps(data)}), "url": url}
+    icon = _site_icon(url)
+    if icon:
+        app["icon"] = icon
+    group = categories.get(category)
+    if isinstance(group, dict):
+        group.setdefault("apps", [])
+        if not isinstance(group["apps"], list):
+            group["apps"] = []
+        group["apps"].append(app)
+    elif isinstance(group, list):
+        group.append(app)
+    else:
+        categories[category] = {"apps": [app]}
+    _save_yaml(_apps_path(current_app.config), data)
+    audit.record("app_added", title=app["title"], url=url, by=session["username"])
+    return jsonify({"title": app["title"], "icon": icon}), 201
 
 
 @config_bp.route("/api/layout", methods=["GET"])
@@ -293,6 +401,7 @@ def put_layout():
     existing = _load_yaml(path, {})
     existing["layout"] = body
     _save_yaml(path, existing)
+    audit.record("layout_saved", by=session["username"])
     return jsonify({"ok": True})
 
 
@@ -432,4 +541,5 @@ def upload_icon():
         return jsonify({"error": "exists", "name": name}), 409
     with open(os.path.join(icons_dir, name), "wb") as f:
         f.write(data)
+    audit.record("icon_uploaded", icon=name, bytes=len(data), by=session["username"])
     return jsonify({"name": name}), 201

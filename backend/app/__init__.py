@@ -11,6 +11,7 @@ from .config import Config
 from .datasources.registry import DataSourceRegistry
 from .routes.auth import auth_bp
 from .routes.calendar import calendar_bp
+from .routes.clientlog import clientlog_bp
 from .routes.config import config_bp
 from .routes.integrations import integrations_bp
 from .routes.defaults import defaults_bp
@@ -82,6 +83,7 @@ def create_app():
     app.register_blueprint(users_bp)
     app.register_blueprint(tilefx_bp)
     app.register_blueprint(feeds_bp)
+    app.register_blueprint(clientlog_bp)
 
     # Cookie-authenticated state changes must come from this site. SameSite=Lax
     # already blocks cross-site POST/PUT/DELETE cookies in current browsers;

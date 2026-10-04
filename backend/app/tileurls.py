@@ -54,6 +54,14 @@ PALETTE_ACCENTS = {
     "mocha": "d9a066",
     "volt": "f5e642",
     "abyss": "3f7fd6",
+    "candy": "ff3d8b",
+    "electric": "3d7bff",
+    "tropic": "00b89f",
+    "citrus": "ff8a00",
+    "grape": "a24dff",
+    "flamingo": "ff5a5f",
+    "lagoon": "0fa3ff",
+    "prism": "e23bd0",
 }
 
 _RASTER = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".ico")

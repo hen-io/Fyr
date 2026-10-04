@@ -69,6 +69,13 @@ def test_apps_keep_their_search_keywords(admin):
     admin.put("/api/apps", json={"apps": []})
 
 
+def test_server_info_lists_versions_and_dependencies(admin):
+    info = admin.get("/api/system/info").get_json()
+    assert info["backend_version"] and info["frontend_version"] and info["python_version"]
+    assert {"Flask", "Pillow", "argon2-cffi"} <= set(info["dependencies"])
+    assert all(isinstance(version, str) and version for version in info["dependencies"].values())
+
+
 def test_icon_upload_accepts_only_real_images(admin, visitor, anon, app):
     png = make_png()
     assert upload(admin, "/api/icons", "ok.png", png).status_code == 201

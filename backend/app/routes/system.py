@@ -1,5 +1,6 @@
 import os
 import platform
+from importlib import metadata
 import signal
 import sys
 import threading
@@ -35,6 +36,21 @@ def about():
     return jsonify(_public_meta())
 
 
+# What requirements.txt installs (and Werkzeug, which Flask brings with it):
+# shown with the installed version in the admin panel's Server tab.
+_PACKAGES = ("Flask", "Werkzeug", "gunicorn", "Flask-Session", "PyYAML", "Pillow", "argon2-cffi", "paho-mqtt")
+
+
+def _dependencies():
+    found = {}
+    for name in _PACKAGES:
+        try:
+            found[name] = metadata.version(name)
+        except metadata.PackageNotFoundError:  # e.g. no gunicorn in a dev checkout
+            continue
+    return found
+
+
 @system_bp.route("/api/system/info")
 @require_role("admin")
 def system_info():
@@ -44,6 +60,8 @@ def system_info():
             "uptime_seconds": int(time.time() - _START_TIME),
             "python_version": platform.python_version(),
             "platform": sys.platform,
+            "os": f"{platform.system()} {platform.release()} ({platform.machine()})",
+            "dependencies": _dependencies(),
             "connections": current_app.datasources.check_all(),
         }
     )

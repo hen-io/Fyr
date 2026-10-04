@@ -43,7 +43,7 @@ _ALLOWED = {
     "narrowLauncherLast": str,
     "headerSearch": str,
     "windowUrlState": str,
-    "appLoaderStyle": str,
+    "appLoader": str,
     "tileOpacity": int,
     "tileBlur": int,
     "gridMargin": int,

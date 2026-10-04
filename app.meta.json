@@ -1,9 +1,9 @@
 {
   "name": "Fyr",
-  "description": "Dashboard and app launcher for your selfhosted apps",
+  "description": "Web-based dashboard and launcher for your selfhosted apps.",
   "author": "Henrik Isefjær Olsen",
   "homepage": "https://github.com/hen-io/Fyr",
-  "version": "0.8.1",
-  "frontend_version": "0.8.3",
-  "backend_version": "0.8.1"
+  "version": "0.8.2",
+  "frontend_version": "0.8.6",
+  "backend_version": "0.8.3"
 }

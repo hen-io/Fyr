@@ -141,7 +141,7 @@ def urls_for(app, chosen, icons_dir, secret):
 
     color = app.get("iconStrokeColor") if app.get("iconStrokeColor") in tilefx.STROKE_COLORS else chosen["logoStrokeColor"]
     radius = radius_percent(chosen["roundness"])
-    logo = {"v": version, "t": int(tint), "sw": width, "sc": color}
+    logo = {"v": version, "t": int(tint), "sw": width, "sc": color, "r": radius}
     if color in ("ink", "auto"):
         logo["m"] = "light" if chosen["colorMode"] == "light" else "dark"
     if color == "accent":

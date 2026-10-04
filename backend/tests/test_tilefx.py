@@ -185,3 +185,24 @@ def test_an_app_can_have_its_own_badge_colours(admin, anon):
     assert anon.get(stored["fx"]["face"].replace("bc=1e90ff", "bc=ff0000")).status_code == 404  # the colour is signed too
     admin.put("/api/apps", json={"apps": []})
     admin.put("/api/defaults", json={"defaults": {}})
+
+
+def test_a_small_logo_is_enlarged_to_the_same_box_as_the_others():
+    from PIL import Image
+
+    box = round(tilefx.SIZE * tilefx.LOGO_FRACTION)
+    for side in (32, 1024):  # a favicon, and a picture larger than the tile
+        drawn = tilefx.render_logo(Image.new("RGBA", (side, side), (200, 30, 30, 255)), False, 0, "ink", "dark", "ffb347")
+        left, top, right, bottom = drawn.split()[3].getbbox()
+        assert abs((right - left) - box) <= 2 and abs((bottom - top) - box) <= 2
+
+
+def test_a_logo_that_fills_its_square_gets_the_rounding():
+    from PIL import Image
+
+    square = Image.new("RGBA", (64, 64), (200, 30, 30, 255))
+    sharp = tilefx.render_logo(square, False, 0, "ink", "dark", "ffb347").split()[3]
+    rounded = tilefx.render_logo(square, False, 0, "ink", "dark", "ffb347", None, 25).split()[3]
+    left, top, right, bottom = sharp.getbbox()
+    assert sharp.getpixel((left + 2, top + 2)) == 255 and rounded.getpixel((left + 2, top + 2)) == 0  # the corner is cut
+    assert rounded.getpixel(((left + right) // 2, (top + bottom) // 2)) == 255 and rounded.getbbox() == sharp.getbbox()

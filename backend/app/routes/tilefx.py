@@ -9,7 +9,7 @@ tilefx_bp = Blueprint("tilefx", __name__)
 
 _MODES = ("dark", "light")
 _FACE_PARAMS = ("v", "r", "s", "c", "vb", "bc", "bc2")
-_LOGO_PARAMS = ("v", "t", "sw", "sc", "m", "ac", "bc")
+_LOGO_PARAMS = ("v", "t", "sw", "sc", "m", "ac", "bc", "r")
 
 
 def _number(value, default, lo, hi):

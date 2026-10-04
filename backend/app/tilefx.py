@@ -23,7 +23,7 @@ LOGO_FRACTION = 0.64  # logo box as a share of the tile side
 LOGO_LIFT = 0.012  # the logo sits a touch above centre (the tile label is below)
 UNIT = SIZE / 180.0  # image px per CSS px, for the outline width
 
-RENDER_VERSION = 15  # bump when the drawing changes: it is part of every cache key and image URL
+RENDER_VERSION = 17  # bump when the drawing changes: it is part of every cache key and image URL
 
 STROKE_COLORS = ("ink", "accent", "white", "black", "auto")
 
@@ -531,11 +531,18 @@ def _stroke_rgb(key, hue, mode, accent):
     return (245, 245, 247) if mode == "dark" else (20, 23, 36)  # "ink": contrast to the page
 
 
-def render_logo(icon, tint, stroke_width, stroke_color, mode, accent, colour=None):
+def render_logo(icon, tint, stroke_width, stroke_color, mode, accent, colour=None, radius_pct=0):
     size = SIZE
     box = round(size * LOGO_FRACTION)
-    logo = icon.copy()
-    logo.thumbnail((box, box), Image.LANCZOS)
+    # (a small picture - a site's favicon - is enlarged to the same box as the others)
+    logo = ImageOps.contain(icon, (box, box), Image.LANCZOS)
+    if radius_pct > 0:
+        # A logo that fills its square (a site's favicon, a photo) gets the same
+        # rounding as everything else; one with clear corners is left as it is.
+        big = (logo.width * _SS, logo.height * _SS)
+        corners = Image.new("L", big, 0)
+        ImageDraw.Draw(corners).rounded_rectangle((0, 0, big[0] - 1, big[1] - 1), radius=min(big) * radius_pct / 100, fill=255)
+        logo.putalpha(ImageChops.multiply(logo.split()[3], corners.reduce(_SS)))
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     canvas.paste(logo, ((size - logo.width) // 2, round((size - logo.height) / 2 - size * LOGO_LIFT)), logo)
     alpha = canvas.split()[3]
@@ -601,7 +608,7 @@ def get_or_render(cache_dir, key, icon_path, kind, tint, stroke_width, stroke_co
         if kind == "face":
             data = _encode(render_face(icon, radius_pct, style, colour_style, vibrancy, colour, colour2), "face")
         else:
-            data = _encode(render_logo(icon, tint, stroke_width, stroke_color, mode, accent, colour), "logo")
+            data = _encode(render_logo(icon, tint, stroke_width, stroke_color, mode, accent, colour, radius_pct), "logo")
         tmp = path + ".tmp"
         with open(tmp, "wb") as handle:
             handle.write(data)

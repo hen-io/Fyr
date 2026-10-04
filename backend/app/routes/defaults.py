@@ -51,6 +51,7 @@ _ALLOWED = {
     "tileBlur": int,
     "gridMargin": int,
     "launcherMargin": int,
+    "tabOpenDelay": int,
     "contentWidth": int,
     "fullscreenMargin": int,
 }

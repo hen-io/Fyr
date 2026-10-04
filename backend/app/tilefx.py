@@ -23,7 +23,7 @@ LOGO_FRACTION = 0.64  # logo box as a share of the tile side
 LOGO_LIFT = 0.012  # the logo sits a touch above centre (the tile label is below)
 UNIT = SIZE / 180.0  # image px per CSS px, for the outline width
 
-RENDER_VERSION = 14  # bump when the drawing changes: it is part of every cache key and image URL
+RENDER_VERSION = 15  # bump when the drawing changes: it is part of every cache key and image URL
 
 STROKE_COLORS = ("ink", "accent", "white", "black", "auto")
 
@@ -192,7 +192,7 @@ def _alpha_composite_solid(base, colour, mask):
 
 
 BADGE_STYLES = (
-    "glass", "bubble", "jelly", "dome", "lens", "pillow", "ring", "ridge", "inset", "metal", "gloss", "neon",
+    "glass", "bubble", "jelly", "dome", "wave", "pillow", "ring", "ridge", "inset", "metal", "gloss", "neon",
     "aqua", "plastic", "bevel", "emboss", "crystal", "satin", "frosted", "backlit", "flat",
 )  # the 3D shading
 BADGE_COLOURS = ("diagonal", "radial", "vertical", "solid", "duo", "dark", "pale", "neutral")  # how the logo colour is laid out
@@ -367,47 +367,49 @@ def render_face(icon, radius_pct=0, style="glass", colour_style="diagonal", vibr
         return paint(face, white, glow_rim(0.5))
 
     if style == "inset":  # pressed into the page: soft shadow under the upper-left lip, light on the far side
-        band = edge(0.13)
-        face = paint(face, (0, 0, 0), _scale(both(band, entering), 0.6))
-        face = paint(face, white, _scale(both(band, leaving), 0.42))
-        return paint(face, (0, 0, 0), _scale(within(blur(_outline(size, radius_pct, size * 0.02), 0.012)), 0.3))
+        band = edge(0.16, 0.8)
+        face = paint(face, (0, 0, 0), _scale(both(band, entering), 0.55))
+        face = paint(face, white, _scale(both(band, leaving), 0.4))
+        face = paint(face, white, _scale(within(_ellipse(size, (0.2, 0.55, 0.8, 1.0), 0.1)), 0.14))  # light pooling in the hollow
+        return paint(face, white, glow_rim(0.3))
 
-    if style == "ring":  # a softly raised frame around a sunken middle
-        frame = 0.1
-        band = blur(ImageChops.subtract(mask, _shape(size, radius_pct, size * frame)), 0.018)
-        face = paint(face, white, _scale(within(both(band, entering)), 0.42))
-        face = paint(face, c3, _scale(within(both(band, leaving)), 0.5))
-        inner = _shape(size, radius_pct, size * frame)
-        step = ImageChops.subtract(inner, _shape(size, radius_pct, size * (frame + 0.08)).filter(ImageFilter.GaussianBlur(size * 0.045)))
-        face = paint(face, (0, 0, 0), _scale(within(both(blur(step, 0.012), entering)), 0.5))
-        face = paint(face, white, _scale(within(both(blur(step, 0.012), leaving)), 0.3))
+    if style == "ring":  # a soft, thick rim of glass round a gently sunken middle
+        rim = blur(ImageChops.subtract(mask, _shape(size, radius_pct, size * 0.12)), 0.04)
+        face = paint(face, white, _scale(within(both(rim, entering)), 0.5))
+        face = paint(face, c3, _scale(within(both(rim, leaving)), 0.5))
+        hollow = blur(_outline(size, radius_pct, size * 0.07, size * 0.13), 0.045)
+        face = paint(face, (0, 0, 0), _scale(within(both(hollow, entering)), 0.38))
+        face = paint(face, _lighten(c1, 0.6), _scale(within(both(hollow, leaving)), 0.4))
+        face = paint(face, white, glare(0.22, 0.42, 0.1))
         return paint(face, white, glow_rim(0.5))
 
-    if style == "ridge":  # two soft swells running round the edge
-        for inset in (0.035, 0.11):
-            swell = blur(_outline(size, radius_pct, size * 0.045, size * inset), 0.02)
-            face = paint(face, white, _scale(within(both(swell, entering)), 0.55))
-            face = paint(face, c3, _scale(within(both(swell, leaving)), 0.6))
-        face = paint(face, white, _scale(within(_ellipse(size, (0.24, 0.22, 0.76, 0.76), 0.14)), 0.08))
-        return paint(face, white, glow_rim(0.4))
+    if style == "ridge":  # ripples: two soft swells of glass running round the edge
+        for inset, strength in ((0.045, 1.0), (0.14, 0.7)):
+            swell = blur(_outline(size, radius_pct, size * 0.05, size * inset), 0.035)
+            face = paint(face, white, _scale(within(both(swell, entering)), 0.6 * strength))
+            face = paint(face, c3, _scale(within(both(swell, leaving)), 0.6 * strength))
+        face = paint(face, white, glare(0.2, 0.45, 0.1))
+        return paint(face, white, glow_rim(0.45))
 
-    if style == "lens":  # a thick, round lens resting in the tile
-        disc = _ellipse(size, (0.1, 0.1, 0.9, 0.9), 0.02)
-        face = paint(face, c3, _scale(within(ImageChops.subtract(mask, disc)), 0.34))  # the tile around it sits lower
-        collar = ImageChops.subtract(disc, _ellipse(size, (0.19, 0.19, 0.81, 0.81), 0.05))
-        face = paint(face, white, _scale(within(both(collar, entering)), 0.6))
-        face = paint(face, (0, 0, 0), _scale(within(both(collar, leaving)), 0.42))
-        face = paint(face, white, _scale(both(disc, _radial(size, 0.38, 0.32, 0.5).point(lambda v: 255 - v)), 0.32))
-        face = paint(face, _lighten(c1, 0.7), _scale(within(_ellipse(size, (0.3, 0.66, 0.74, 0.86), 0.05)), 0.45))
-        return paint(face, white, glow_rim(0.35))
+    if style == "wave":  # liquid in a glass: soft swells of deeper colour rolling across the lower half
+        back = _ellipse(size, (0.25, 0.56, 1.55, 1.7), 0.06)
+        face = paint(face, c2, _scale(within(back), 0.5))
+        front = (-0.45, 0.5, 0.95, 1.6)
+        face = paint(face, c3, _scale(within(_ellipse(size, front, 0.05)), 0.55))
+        # light caught along the top of the front swell
+        crest = ImageChops.subtract(_ellipse(size, front, 0.03), _ellipse(size, (front[0], front[1] + 0.045, front[2], front[3] + 0.045), 0.03))
+        face = paint(face, _lighten(c1, 0.75), _scale(within(crest), 0.65))
+        face = roundness(0.1, 0.55, 0.45)
+        face = paint(face, white, glare(0.35, 0.45, 0.09))
+        return paint(face, white, glow_rim(0.55))
 
-    if style == "metal":  # brushed metal: soft bands of light running across
-        bands = _vertical(size, 0, 1).point(lambda v: int(255 * (0.5 + 0.5 * math.sin(v / 255 * math.pi * 3.2 + 0.6)) ** 1.5))
-        face = paint(face, white, _scale(within(blur(bands, 0.02)), 0.34))
-        dark_bands = _vertical(size, 0, 1).point(lambda v: int(255 * (0.5 - 0.5 * math.sin(v / 255 * math.pi * 3.2 + 0.6)) ** 2))
-        face = paint(face, (0, 0, 0), _scale(within(blur(dark_bands, 0.02)), 0.28))
-        face = roundness(0.07, 0.5, 0.5)
-        return paint(face, white, glow_rim(0.5))
+    if style == "metal":  # liquid metal: slow, wide waves of light and shade under a glass skin
+        wave = lambda sign, power: _vertical(size, 0, 1).point(lambda v: int(255 * (0.5 + sign * 0.5 * math.sin(v / 255 * math.pi * 2.0 + 0.9)) ** power))  # noqa: E731
+        face = paint(face, white, _scale(within(blur(wave(1, 1.2), 0.06)), 0.34))
+        face = paint(face, c3, _scale(within(blur(wave(-1, 1.6), 0.06)), 0.5))
+        face = roundness(0.1, 0.55, 0.5)
+        face = paint(face, white, glare(0.22, 0.4, 0.1))
+        return paint(face, white, glow_rim(0.55))
 
     if style == "neon":  # the middle sinks into the dark, the edge glows in the logo's colour
         face = paint(face, (0, 0, 0), _scale(within(_ellipse(size, (0.02, 0.02, 0.98, 0.98), 0.12)), 0.72))
@@ -415,63 +417,68 @@ def render_face(icon, radius_pct=0, style="glass", colour_style="diagonal", vibr
         face = paint(face, _lighten(c1, 0.6), within(blur(_outline(size, radius_pct, size * 0.02), 0.012)))
         return face
 
-    if style == "gloss":  # lacquer: a broad, soft glare over the top half
-        face = roundness(0.09, 0.55, 0.3)
-        face = paint(face, white, glare(0.5, 0.5, 0.035))
-        face = paint(face, _lighten(c1, 0.6), _scale(within(_ellipse(size, (0.15, 0.8, 0.85, 1.2), 0.08)), 0.45))
+    if style == "gloss":  # lacquer: a broad glare over the top half that melts away downwards
+        face = roundness(0.1, 0.55, 0.3)
+        face = paint(face, white, glare(0.55, 0.5, 0.1))
+        face = paint(face, _lighten(c1, 0.6), _scale(within(_ellipse(size, (0.15, 0.8, 0.85, 1.2), 0.1)), 0.45))
         return paint(face, white, glow_rim(0.5))
 
-    if style == "aqua":  # a water-drop button: a glossy cap over the top half, light pooling at the bottom
-        face = roundness(0.08, 0.5, 0.25)
-        cap = within(both(_ellipse(size, (0.08, 0.04, 0.92, 0.52), 0.012), _vertical(size, 0.85, 0.0)))
-        face = paint(face, white, _scale(cap, 0.75))
-        face = paint(face, _lighten(c1, 0.75), _scale(within(_ellipse(size, (0.1, 0.6, 0.9, 1.1), 0.09)), 0.6))
-        return paint(face, white, glow_rim(0.45))
-
-    if style == "plastic":  # moulded plastic: fat rounded shoulders, a small hard glint, a darker underside
-        face = roundness(0.14, 0.7, 0.35)
-        face = paint(face, (0, 0, 0), within(_vertical(size, 0.0, 0.3)))
-        face = paint(face, white, _scale(within(_ellipse(size, (0.14, 0.1, 0.42, 0.2), 0.012)), 0.85))
-        face = paint(face, white, _scale(within(_ellipse(size, (0.46, 0.11, 0.54, 0.17), 0.008)), 0.7))
+    if style == "aqua":  # a drop of water: a soft cap of light on top, the colour glowing at the bottom
+        face = roundness(0.1, 0.5, 0.3)
+        cap = within(both(_ellipse(size, (0.1, 0.02, 0.9, 0.46), 0.07), _vertical(size, 0.9, 0.0)))
+        face = paint(face, white, _scale(cap, 0.7))
+        face = paint(face, _lighten(c1, 0.75), _scale(within(_ellipse(size, (0.12, 0.62, 0.88, 1.1), 0.11)), 0.6))
         return paint(face, white, glow_rim(0.5))
 
-    if style == "bevel":  # a cut edge: a crisp chamfer, bright on the lit sides and dark on the others
-        band = blur(ImageChops.subtract(mask, _shape(size, radius_pct, size * 0.075)), 0.004)
-        face = paint(face, white, _scale(within(both(band, entering)), 0.6))
-        face = paint(face, (0, 0, 0), _scale(within(both(band, leaving)), 0.5))
-        return paint(face, white, _scale(within(blur(_outline(size, radius_pct, size * 0.008, size * 0.075), 0.004)), 0.25))
+    if style == "plastic":  # candy: fat rounded shoulders, a soft glint, a darker underside
+        face = roundness(0.15, 0.7, 0.4)
+        face = paint(face, (0, 0, 0), within(_vertical(size, 0.0, 0.28)))
+        face = paint(face, white, _scale(within(_ellipse(size, (0.14, 0.08, 0.5, 0.24), 0.04)), 0.7))
+        face = paint(face, _lighten(c1, 0.6), _scale(both(edge(0.12), leaving), 0.35))
+        return paint(face, white, glow_rim(0.5))
 
-    if style == "emboss":  # a raised plate in the middle, standing up from a lower rim
-        inset = 0.12
-        plate = _shape(size, radius_pct, size * inset)
-        face = paint(face, (0, 0, 0), _scale(within(ImageChops.subtract(mask, plate)), 0.22))
-        shadow = ImageChops.offset(blur(plate, 0.03), round(size * 0.02), round(size * 0.025))
-        face = paint(face, (0, 0, 0), _scale(within(ImageChops.subtract(shadow, plate)), 0.6))
-        lip = blur(_outline(size, radius_pct, size * 0.03, size * inset), 0.01)
-        face = paint(face, white, _scale(within(both(lip, entering)), 0.7))
-        face = paint(face, c3, _scale(within(both(lip, leaving)), 0.6))
-        return paint(face, white, glow_rim(0.3))
+    if style == "bevel":  # a thick slab of glass: a wide, soft edge that bends the light
+        band = blur(ImageChops.subtract(mask, _shape(size, radius_pct, size * 0.1)), 0.035)
+        face = paint(face, white, _scale(within(both(band, entering)), 0.62))
+        face = paint(face, c3, _scale(within(both(band, leaving)), 0.6))
+        inner = blur(_outline(size, radius_pct, size * 0.035, size * 0.12), 0.03)
+        face = paint(face, _lighten(c1, 0.7), _scale(within(both(inner, leaving)), 0.55))  # light gathering inside the far edge
+        face = paint(face, white, glare(0.25, 0.45, 0.1))
+        return paint(face, white, glow_rim(0.55))
 
-    if style == "crystal":  # cut like a gem: four flat facets round a flat top
+    if style == "emboss":  # a cushion of glass swelling up out of the middle
+        swell = blur(_shape(size, radius_pct, size * 0.13), 0.05)
+        ground = ImageChops.subtract(mask, swell)
+        face = paint(face, c3, _scale(within(ground), 0.4))
+        shade = ImageChops.subtract(ImageChops.offset(swell, round(size * 0.025), round(size * 0.03)), swell)
+        face = paint(face, (0, 0, 0), _scale(within(blur(shade, 0.02)), 0.5))
+        face = paint(face, white, _scale(both(swell, _radial(size, 0.36, 0.3, 0.6).point(lambda v: 255 - v)), 0.4))
+        face = paint(face, white, _scale(within(_ellipse(size, (0.24, 0.17, 0.56, 0.33), 0.05)), 0.35))
+        return paint(face, white, glow_rim(0.4))
+
+    if style == "crystal":  # light breaking through cut glass: four soft planes of light and shade
         other = diagonal.transpose(Image.FLIP_LEFT_RIGHT)  # 0 in the top-right corner
         near, far = (lambda v: 255 if v < 128 else 0), (lambda v: 0 if v < 128 else 255)
         facets = (  # (which side, light or shade, how strong)
-            (both(diagonal.point(near), other.point(near)), white, 0.34),  # top
-            (both(diagonal.point(near), other.point(far)), white, 0.14),  # left
-            (both(diagonal.point(far), other.point(near)), (0, 0, 0), 0.16),  # right
-            (both(diagonal.point(far), other.point(far)), (0, 0, 0), 0.34),  # bottom
+            (both(diagonal.point(near), other.point(near)), white, 0.4),  # top
+            (both(diagonal.point(near), other.point(far)), white, 0.16),  # left
+            (both(diagonal.point(far), other.point(near)), c3, 0.3),  # right
+            (both(diagonal.point(far), other.point(far)), c3, 0.55),  # bottom
         )
         for facet, tone, strength in facets:
-            face = paint(face, tone, _scale(within(blur(facet, 0.006)), strength))
-        face = paint(face, _lighten(c1, 0.5), _scale(within(blur(_shape(size, radius_pct, size * 0.27), 0.004)), 0.35))
+            face = paint(face, tone, _scale(within(blur(facet, 0.055)), strength))
+        face = paint(face, _lighten(c1, 0.6), _scale(within(_ellipse(size, (0.22, 0.24, 0.78, 0.8), 0.1)), 0.3))
+        face = roundness(0.07, 0.4, 0.35)
         return paint(face, white, glow_rim(0.6))
 
-    if style == "satin":  # a band of sheen sweeping across from corner to corner
-        for centre, width, strength in ((0.42, 0.16, 0.38), (0.78, 0.07, 0.16)):
-            sheen = diagonal.point(lambda v, c=centre, w=width: int(255 * math.exp(-(((v / 255) - c) / w) ** 2)))
-            face = paint(face, white, _scale(within(sheen), strength))
-        face = roundness(0.06, 0.45, 0.3)
-        return paint(face, white, glow_rim(0.4))
+    if style == "satin":  # silk under glass: one broad, soft sweep of light from corner to corner
+        sheen = diagonal.point(lambda v: int(255 * math.exp(-(((v / 255) - 0.36) / 0.26) ** 2)))
+        face = paint(face, white, _scale(within(sheen), 0.36))
+        face = paint(face, c3, _scale(within(diagonal.point(lambda v: int(255 * _clamp((v - 150) / 105, 0, 1) ** 1.5))), 0.45))
+        face = roundness(0.1, 0.5, 0.4)
+        caustic = blur(_outline(size, radius_pct, size * 0.03, size * 0.035), 0.022)
+        face = paint(face, _lighten(c1, 0.7), _scale(within(both(caustic, leaving)), 0.6))
+        return paint(face, white, glow_rim(0.5))
 
     if style == "frosted":  # matte, frosted glass: a milky veil and a soft light edge, no glare
         face = paint(face, white, _scale(mask, 0.16))

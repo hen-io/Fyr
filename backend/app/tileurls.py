@@ -118,9 +118,10 @@ def settings(defaults):
 
 def urls_for(app, chosen, icons_dir, secret):
     """{"face": url|None, "logo": url, "round": percent} for one app, or None
-    when it gets no drawn effects (no icon file, or neither tint nor outline
-    is on). An SVG icon gets the badge only: its logo
-    stays the SVG itself, drawn (and outlined) by the browser."""
+    when it has no icon file. The logo is always drawn here (fitted to the
+    common size and rounded), the badge only with tint on. An SVG icon gets
+    the badge only: its logo stays the SVG itself, drawn (and outlined) by
+    the browser."""
     icon = app.get("icon")
     if not isinstance(icon, str) or not icon.lower().endswith(_RASTER + _VECTOR):
         return None
@@ -132,8 +133,6 @@ def urls_for(app, chosen, icons_dir, secret):
     if isinstance(width, bool) or not isinstance(width, (int, float)):
         width = chosen["logoStrokeWidth"]
     width = round(max(0.0, min(6.0, float(width))) * 2) / 2
-    if not tint and width <= 0:
-        return None
     try:
         version = f"{int(os.path.getmtime(os.path.join(icons_dir, icon)))}-{tilefx.RENDER_VERSION}"
     except OSError:

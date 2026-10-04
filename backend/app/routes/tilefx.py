@@ -50,9 +50,6 @@ def tile_image(icon, kind):
     colour_style = params.get("c") if params.get("c") in tilefx.BADGE_COLOURS else "diagonal"
     vibrancy = _number(params.get("vb"), tilefx.DEFAULT_VIBRANCY, 0, 100)
     colour, colour2 = (tileurls.hex_colour("#" + params.get(name, "")) for name in ("bc", "bc2"))
-    if kind == "logo" and not tint and width <= 0:
-        return Response(status=404)
-
     key = "|".join([kind, icon] + [f"{name}={params[name]}" for name in sorted(params)])
     try:
         data = tilefx.get_or_render(

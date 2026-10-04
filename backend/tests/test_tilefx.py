@@ -23,9 +23,12 @@ def _fx(client, title="Badge"):
     return next(a for a in client.get("/api/apps").get_json()["apps"] if a["title"] == title).get("fx")
 
 
-def test_no_effects_means_no_urls(admin, anon):
+def test_without_effects_only_the_logo_is_drawn(admin, anon):
     _setup(admin, {})
-    assert _fx(anon) is None
+    fx = _fx(anon)
+    assert fx["face"] is None and "t=0" in fx["logo"] and "sw=0.0" in fx["logo"]  # fitted and rounded, nothing more
+    assert anon.get(fx["logo"]).status_code == 200
+    assert _fx(anon, "NoIcon") is None
 
 
 def test_signed_urls_render_and_nothing_else_does(admin, anon):
@@ -52,7 +55,7 @@ def test_signed_urls_render_and_nothing_else_does(admin, anon):
 def test_per_app_outline_overrides_the_default(admin, anon):
     _setup(admin, {"logoStrokeWidth": 3})
     admin.put("/api/apps", json={"apps": [{"title": "Badge", "url": "https://b.example", "icon": "badge.png", "iconStroke": 0}]})
-    assert _fx(anon) is None  # switched off for this app, and no tint
+    assert "sw=0.0" in _fx(anon)["logo"] and _fx(anon)["face"] is None  # switched off for this app, and no tint
     admin.put("/api/apps", json={"apps": [{"title": "Badge", "url": "https://b.example", "icon": "badge.png", "iconStroke": 5, "iconStrokeColor": "white"}]})
     assert "sw=5.0" in _fx(anon)["logo"] and "sc=white" in _fx(anon)["logo"] and _fx(anon)["face"] is None
     admin.put("/api/defaults", json={"defaults": {}})
@@ -206,3 +209,43 @@ def test_a_logo_that_fills_its_square_gets_the_rounding():
     left, top, right, bottom = sharp.getbbox()
     assert sharp.getpixel((left + 2, top + 2)) == 255 and rounded.getpixel((left + 2, top + 2)) == 0  # the corner is cut
     assert rounded.getpixel(((left + right) // 2, (top + bottom) // 2)) == 255 and rounded.getbbox() == sharp.getbbox()
+
+
+def test_a_favicon_with_an_empty_margin_fills_the_box_and_is_rounded():
+    from PIL import Image
+
+    padded = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    padded.paste(Image.new("RGBA", (28, 28), (200, 30, 30, 255)), (18, 18))
+    box = round(tilefx.SIZE * tilefx.LOGO_FRACTION)
+    alpha = tilefx.render_logo(padded, False, 0, "ink", "dark", "ffb347", None, 25).split()[3]
+    left, top, right, bottom = alpha.getbbox()
+    assert abs((right - left) - box) <= 2 and abs((bottom - top) - box) <= 2  # the margin is gone
+    assert alpha.getpixel((left + 3, top + 3)) == 0 and alpha.getpixel(((left + right) // 2, top + 3)) == 255  # corners cut, edges whole
+
+
+def test_see_through_logos_are_left_whole_and_stay_visible():
+    from PIL import Image, ImageDraw
+
+    def glyph(colour, extra=None):  # an X reaching into all four corners, on a clear background
+        image = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        draw.line((0, 0, 63, 63), fill=colour, width=12)
+        draw.line((63, 0, 0, 63), fill=colour, width=12)
+        if extra:
+            draw.ellipse((20, 20, 44, 44), fill=extra)
+        return image
+
+    # without a badge nothing is cut off the shape by the rounding
+    whole = tilefx.render_logo(glyph((30, 90, 220, 255)), False, 0, "ink", "dark", "", None, 25).split()[3]
+    left, top, _right, _bottom = whole.getbbox()
+    assert whole.getpixel((left + 4, top + 4)) > 200
+    # one flat colour, the same as its badge: it gets a plate to stand on
+    plated = tilefx.render_logo(glyph((30, 90, 220, 255)), True, 0, "ink", "dark", "", None, 25)
+    spot = (tilefx.SIZE // 2, round(tilefx.SIZE * 0.26))  # between the arms of the X, inside the logo box
+    assert plated.getpixel(spot) == (246, 247, 250, 255)
+    black = tilefx.render_logo(glyph((10, 10, 10, 255)), True, 0, "ink", "dark", "", None, 25)
+    assert black.getpixel(spot) == (246, 247, 250, 255)
+    # a logo with contrast of its own, or on a badge of another colour, gets none
+    for image, picked in ((glyph((30, 90, 220, 255), (255, 255, 255, 255)), None), (glyph((30, 90, 220, 255)), "ffb347")):
+        plain = tilefx.render_logo(image, True, 0, "ink", "dark", "", picked, 25)
+        assert plain.getpixel(spot)[:3] != (246, 247, 250)

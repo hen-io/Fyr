@@ -23,7 +23,7 @@ LOGO_FRACTION = 0.64  # logo box as a share of the tile side
 LOGO_LIFT = 0.012  # the logo sits a touch above centre (the tile label is below)
 UNIT = SIZE / 180.0  # image px per CSS px, for the outline width
 
-RENDER_VERSION = 19  # bump when the drawing changes: it is part of every cache key and image URL
+RENDER_VERSION = 20  # bump when the drawing changes: it is part of every cache key and image URL
 
 STROKE_COLORS = ("ink", "accent", "white", "black", "auto")
 
@@ -541,26 +541,6 @@ def _fills_its_square(logo):
     return solid > 0.85 and all(alpha.getpixel(spot) > 200 for spot in spots)
 
 
-def _lost_on(icon, badge):
-    """For a logo that is one flat colour on a clear background: "dark" or
-    "light" (its own tone) when that colour is too close to the badge's to
-    be seen on it, else None. A logo with contrast of its own is never lost."""
-    lights = []
-    total = [0, 0, 0]
-    for r, g, b, a in _pixels(icon.resize((48, 48), Image.LANCZOS)):
-        if a >= 128:
-            lights.append((0.299 * r + 0.587 * g + 0.114 * b) / 255)
-            total = [total[0] + r, total[1] + g, total[2] + b]
-    if len(lights) < 40 or len(lights) > 48 * 48 * 0.9:
-        return None
-    mean = sum(lights) / len(lights)
-    if (sum((v - mean) ** 2 for v in lights) / len(lights)) ** 0.5 > 0.1:
-        return None
-    colour = [c / len(lights) for c in total]
-    distance = (sum((x - y) ** 2 for x, y in zip(colour, badge)) / 3) ** 0.5 / 255
-    return ("dark" if mean < 0.55 else "light") if distance < 0.2 else None
-
-
 def render_logo(icon, tint, stroke_width, stroke_color, mode, accent, colour=None, radius_pct=0):
     size = SIZE
     box = round(size * LOGO_FRACTION)
@@ -578,16 +558,7 @@ def render_logo(icon, tint, stroke_width, stroke_color, mode, accent, colour=Non
         ImageDraw.Draw(shape).rounded_rectangle((0, 0, big[0] - 1, big[1] - 1), radius=min(big) * radius_pct / 100, fill=255)
         return shape.reduce(_SS)
 
-    lost = _lost_on(icon, palette(icon, colour=colour)[0][1]) if tint else None
-    if lost:
-        # A flat, see-through logo in the badge's own colour would vanish on it:
-        # it gets a plate of the opposite tone, the size every other logo has.
-        plate = Image.new("RGBA", (box, box), (246, 247, 250, 255) if lost == "dark" else (28, 30, 38, 255))
-        plate.putalpha(rounded(box, box))
-        small = ImageOps.contain(icon, (round(box * 0.68), round(box * 0.68)), Image.LANCZOS)
-        plate.alpha_composite(small, ((box - small.width) // 2, (box - small.height) // 2))
-        logo = plate
-    elif radius_pct > 0 and _fills_its_square(logo):
+    if radius_pct > 0 and _fills_its_square(logo):
         # A logo that fills its square (a site's favicon, a photo) gets the same
         # rounding as everything else; a shape on a clear background is left whole.
         logo.putalpha(ImageChops.multiply(logo.split()[3], rounded(logo.width, logo.height)))

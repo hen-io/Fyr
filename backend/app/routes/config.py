@@ -186,11 +186,17 @@ def get_apps():
     # admin's settings (see tileurls.py), for the apps that get them.
     chosen = tileurls.settings(_load_yaml(_layout_path(current_app.config), {}).get("defaults"))
     icons_dir = os.path.join(current_app.config["CONFIG_DIR"], "icons")
+    pictures = []
     for app in apps:
         if isinstance(app.get("icon"), str) and _ICON_NAME.match(app["icon"]):
             fx = tileurls.urls_for(app, chosen, icons_dir, current_app.config["SECRET_KEY"])
             if fx:
                 app["fx"] = fx
+                pictures += [url for url in (fx["face"], fx["logo"]) if url]
+    if pictures:
+        from .tilefx import draw_ahead  # (that module imports this one)
+
+        draw_ahead(current_app.config, pictures)
     meta ={k: v for k, v in _category_meta(data).items() if k not in hidden}
     if not show_all:
         for entry in meta.values():

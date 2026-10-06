@@ -238,3 +238,26 @@ def test_see_through_logos_are_left_as_they_are():
     whole = tilefx.render_logo(image, False, 0, "ink", "dark", "", None, 25).split()[3]
     left, top, _right, _bottom = whole.getbbox()
     assert whole.getpixel((left + 4, top + 4)) > 200  # and the rounding cuts nothing off the shape
+
+
+def test_new_pictures_are_drawn_ahead_of_being_asked_for(admin, anon, app):
+    import time
+
+    _setup(admin, {"tileTint": "on", "tileBadgeStyle": "satin", "roundness": 12})
+    fx = _fx(anon)  # asking for the app list is what starts the drawing
+    cache = os.path.join(app.config["DATA_DIR"], "tilefx")
+    from urllib.parse import parse_qsl, urlsplit
+
+    from app.routes.tilefx import _key
+
+    wanted = []
+    for kind in ("face", "logo"):
+        params = {name: value for name, value in parse_qsl(urlsplit(fx[kind]).query) if name != "sig"}
+        wanted.append(tilefx.cache_path(cache, _key(kind, "badge.png", params)))
+    deadline = time.time() + 10
+    while time.time() < deadline and not all(os.path.isfile(path) for path in wanted):
+        time.sleep(0.05)
+    assert all(os.path.isfile(path) for path in wanted)
+    with open(wanted[0], "rb") as handle:
+        assert anon.get(fx["face"]).data == handle.read()  # the same picture the URL answers with
+    admin.put("/api/defaults", json={"defaults": {}})

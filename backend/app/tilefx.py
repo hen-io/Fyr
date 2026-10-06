@@ -27,7 +27,13 @@ RENDER_VERSION = 20  # bump when the drawing changes: it is part of every cache 
 
 STROKE_COLORS = ("ink", "accent", "white", "black", "auto")
 
-_render_lock = threading.Lock()
+# Drawing is the only heavy work this server does. Several pictures are drawn
+# at once (Pillow lets go of the interpreter while it works), but never more
+# than the machine has cores for, and never the same picture twice.
+_render_slots = threading.BoundedSemaphore(max(1, min(4, os.cpu_count() or 1)))
+_in_progress = {}  # cache path -> lock held by whoever is drawing it
+_in_progress_lock = threading.Lock()
+_renders = 0
 _MAX_CACHED = 3000
 
 
@@ -509,7 +515,7 @@ def _ring(alpha, radius):
     """Uniform outline: the logo's alpha copied at 32 evenly spaced offsets on a
     circle, merged in parallel, so it is the same thickness in every direction."""
     ring = Image.new("L", alpha.size, 0)
-    steps = 32
+    steps = 16 if radius < 6 else 24
     for i in range(steps):
         angle = 2 * math.pi * i / steps
         ring = ImageChops.lighter(ring, ImageChops.offset(alpha, round(math.cos(angle) * radius), round(math.sin(angle) * radius)))
@@ -588,10 +594,11 @@ def render_logo(icon, tint, stroke_width, stroke_color, mode, accent, colour=Non
 
 def _encode(image, kind):
     buffer = io.BytesIO()
+    # method 2: less than half the time of the default 4, for files a tenth larger
     if kind == "face":
-        image.save(buffer, "WEBP", quality=90, alpha_quality=100, method=4)
+        image.save(buffer, "WEBP", quality=90, alpha_quality=100, method=2)
     else:
-        image.save(buffer, "WEBP", quality=92, alpha_quality=100, method=4)
+        image.save(buffer, "WEBP", quality=92, alpha_quality=100, method=2)
     return buffer.getvalue()
 
 
@@ -619,18 +626,28 @@ def get_or_render(cache_dir, key, icon_path, kind, tint, stroke_width, stroke_co
         os.utime(path, None)
         with open(path, "rb") as handle:
             return handle.read()
-    with _render_lock:  # one render at a time: a burst of new icons must not spike the CPU
-        if os.path.isfile(path):
-            with open(path, "rb") as handle:
-                return handle.read()
-        icon = load_icon(icon_path)
-        if kind == "face":
-            data = _encode(render_face(icon, radius_pct, style, colour_style, vibrancy, colour, colour2), "face")
-        else:
-            data = _encode(render_logo(icon, tint, stroke_width, stroke_color, mode, accent, colour, radius_pct), "logo")
-        tmp = path + ".tmp"
-        with open(tmp, "wb") as handle:
-            handle.write(data)
-        os.replace(tmp, path)
+    global _renders
+    with _in_progress_lock:
+        mine = _in_progress.setdefault(path, threading.Lock())
+    try:
+        with mine:
+            if os.path.isfile(path):  # someone else drew it while this request waited
+                with open(path, "rb") as handle:
+                    return handle.read()
+            with _render_slots:
+                icon = load_icon(icon_path)
+                if kind == "face":
+                    data = _encode(render_face(icon, radius_pct, style, colour_style, vibrancy, colour, colour2), "face")
+                else:
+                    data = _encode(render_logo(icon, tint, stroke_width, stroke_color, mode, accent, colour, radius_pct), "logo")
+            tmp = f"{path}.{threading.get_ident()}.tmp"
+            with open(tmp, "wb") as handle:
+                handle.write(data)
+            os.replace(tmp, path)
+    finally:
+        with _in_progress_lock:
+            _in_progress.pop(path, None)
+    _renders += 1
+    if _renders % 50 == 0:
         _trim_cache(cache_dir)
-        return data
+    return data

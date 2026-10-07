@@ -32,7 +32,6 @@ _ALLOWED = {
     "colorMode": str,
     "bgEffect": str,
     "bgSpeed": int,
-    "bgQuality": str,
     "hoverEffect": str,
     "tilesPerRow": (str, int),
     "gap": int,

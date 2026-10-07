@@ -4,7 +4,7 @@ import threading
 import time
 from functools import wraps
 
-from flask import current_app, jsonify, session
+from flask import current_app, jsonify, request, session
 
 from . import passwords
 from .fileio import load_json, save_json
@@ -209,6 +209,10 @@ def require_role(*roles):
             if not user:
                 return jsonify({"error": "not_authenticated"}), 401
             if roles and user["role"] not in roles:
+                # an account reaching for something only an admin may do: worth a line in the log
+                from . import audit
+
+                audit.record("refused", user=user["username"], role=user["role"], method=request.method, path=request.path)
                 return jsonify({"error": "forbidden"}), 403
             return fn(*args, **kwargs)
 

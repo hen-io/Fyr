@@ -4,6 +4,7 @@ import re
 import threading
 import time
 import uuid
+from urllib.parse import urlparse
 
 from flask import Blueprint, current_app, jsonify, request, session
 
@@ -299,10 +300,36 @@ def _collect(widget):
 # --- routes -----------------------------------------------------------------
 
 
+def _without_private(widget):
+    """A widget as everyone but an admin gets it. A feed's address is only
+    ever fetched by the server (and may carry a private token in its path or
+    query): the browser gets the site it is on, nothing more."""
+    feeds = widget.get("feeds")
+    if not isinstance(feeds, list):
+        return widget
+
+    def site(entry):
+        url = entry.get("url") if isinstance(entry, dict) else entry
+        short = ""
+        try:
+            parts = urlparse(url) if isinstance(url, str) else None
+            if parts and parts.scheme in ("http", "https") and parts.hostname:
+                short = f"{parts.scheme}://{parts.hostname}{f':{parts.port}' if parts.port else ''}/"
+        except ValueError:
+            pass
+        return {**entry, "url": short} if isinstance(entry, dict) else short
+
+    return {**widget, "feeds": [site(entry) for entry in feeds]}
+
+
 @widgets_bp.route("/api/widgets", methods=["GET"])
 def list_widgets():
     grid, widgets = _dashboard(current_app.config)
-    return jsonify({"grid": grid, "pages": _pages(current_app.config), "widgets": [w for w in widgets if _visible(w)]})
+    user = current_user(current_app.config)
+    shown = [w for w in widgets if _visible(w)]
+    if not user or user["role"] != "admin":
+        shown = [_without_private(w) for w in shown]
+    return jsonify({"grid": grid, "pages": _pages(current_app.config), "widgets": shown})
 
 
 @widgets_bp.route("/api/widgets", methods=["PUT"])

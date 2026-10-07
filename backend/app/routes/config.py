@@ -1,7 +1,11 @@
+import json
 import os
 import re
 import ssl
+import threading
+import urllib.error
 import urllib.request
+from functools import wraps
 from urllib.parse import urljoin, urlparse
 
 from flask import Blueprint, current_app, jsonify, request, send_from_directory, session
@@ -90,6 +94,36 @@ def _save_yaml(path, data):
     save_yaml(path, data)
 
 
+# apps.config is read, changed and written back by several routes; one at a
+# time, or two admins saving at the same moment could undo each other.
+_apps_lock = threading.RLock()
+
+def _one_at_a_time(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        with _apps_lock:
+            return fn(*args, **kwargs)
+
+    return wrapped
+
+
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _web_address(url, strict=False):
+    """An http(s) address fit to be stored and later opened in a browser: no
+    control characters (a line break could forge a config line or a header).
+    `strict` (addresses typed into the search field) also refuses spaces and
+    a user name / password inside the address."""
+    if not isinstance(url, str) or len(url) > 500 or _CONTROL.search(url) or not re.match(r"^https?://[^\s/]+", url):
+        return False
+    if strict:
+        parts = urlparse(url)
+        if re.search(r"\s", url) or parts.username is not None or parts.password is not None or not parts.hostname:
+            return False
+    return True
+
+
 _ICON_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.(png|jpe?g|webp|gif|ico|svg)$")
 _STROKE_COLORS = ("ink", "accent", "white", "black", "auto")
 _APP_KEYS = ("title", "url", "internalUrl", "icon", "category", "visibility", "default_mode", "keywords")
@@ -134,7 +168,7 @@ def _clean_apps(raw):
             return None, "duplicate_title"
         seen.add(title)
         for key in ("url", "internalUrl"):
-            if key in app and not re.match(r"^https?://[^\s/]+", app[key]):
+            if key in app and not _web_address(app[key]):
                 return None, "invalid_url"
         if "url" not in app:
             return None, "invalid_url"
@@ -210,6 +244,7 @@ def get_apps():
 
 @config_bp.route("/api/apps", methods=["PUT"])
 @require_role("admin")
+@_one_at_a_time
 def put_apps():
     body = request.get_json(silent=True)
     if not isinstance(body, dict) or not isinstance(body.get("apps"), list):
@@ -285,10 +320,33 @@ def _fetch(url, limit):
     are not checked: internal apps are often self-signed, and what comes back
     is only ever used after it has been verified to be an image."""
     request_ = urllib.request.Request(url, headers={"User-Agent": "fyr-icon-fetch"})
-    with urllib.request.urlopen(request_, timeout=5, context=ssl._create_unverified_context()) as response:  # noqa: S323
+    with _fetcher.open(request_, timeout=5) as response:
         if not response.geturl().lower().startswith(("http://", "https://")):
             raise ValueError("left http")
         return response.geturl(), response.read(limit + 1)[:limit]
+
+
+class _WebRedirectsOnly(urllib.request.HTTPRedirectHandler):
+    """A few redirects, and only to another http(s) address."""
+
+    max_redirections = 3
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not newurl.lower().startswith(("http://", "https://")):
+            raise urllib.error.HTTPError(newurl, code, "redirect away from http refused", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+# Built by hand, not build_opener(): that one also speaks ftp:// and file://.
+_fetcher = urllib.request.OpenerDirector()
+for _handler in (
+    urllib.request.HTTPHandler(),
+    urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),  # noqa: S323
+    urllib.request.HTTPDefaultErrorHandler(),
+    urllib.request.HTTPErrorProcessor(),
+    _WebRedirectsOnly(),
+):
+    _fetcher.add_handler(_handler)
 
 
 def _site_icon(url):
@@ -345,8 +403,14 @@ def add_app():
     icon as its logo (both can be changed afterwards in the admin panel)."""
     body = request.get_json(silent=True)
     url = body.get("url").strip() if isinstance(body, dict) and isinstance(body.get("url"), str) else ""
-    if not re.match(r"^https?://[^\s/]+", url) or len(url) > 500:
+    if not _web_address(url, strict=True):
         return jsonify({"error": "invalid_url"}), 400
+    icon = _site_icon(url)  # (slow: before the lock, not under it)
+    with _apps_lock:
+        return _add_app(body, url, icon)
+
+
+def _add_app(body, url, icon):
     data = _load_yaml(_apps_path(current_app.config), {})
     if not isinstance(data.get("categories"), dict):
         data["categories"] = {}
@@ -358,7 +422,6 @@ def add_app():
         return jsonify({"error": "invalid_category"}), 400
 
     app = {"title": _title_for(url, {a.get("title") for a in _flatten_apps(data)}), "url": url}
-    icon = _site_icon(url)
     if icon:
         app["icon"] = icon
     group = categories.get(category)
@@ -394,11 +457,17 @@ def get_layout():
     return jsonify(layout)
 
 
+def _layout_entry(title, place):
+    plain = (str, int, float, bool, type(None))
+    return isinstance(title, str) and 0 < len(title) <= 200 and (isinstance(place, plain) or (isinstance(place, dict) and len(place) <= 12 and all(isinstance(k, str) and isinstance(v, plain) for k, v in place.items())))
+
+
 @config_bp.route("/api/layout", methods=["PUT"])
 @require_role("admin")
 def put_layout():
     body = request.get_json(silent=True)
-    if not isinstance(body, dict):
+    # {app title: its place}: nothing else is stored, however it is dressed up
+    if not isinstance(body, dict) or len(body) > 2000 or len(json.dumps(body)) > 200_000 or not all(_layout_entry(k, v) for k, v in body.items()):
         return jsonify({"error": "invalid_body"}), 400
     # ui.conf also holds "widgets" as a sibling key - read-modify-write
     # instead of overwriting the whole file, or saving a layout would
@@ -473,6 +542,7 @@ def list_icons():
 
 @config_bp.route("/api/icons/<name>", methods=["PATCH"])
 @require_role("admin")
+@_one_at_a_time
 def rename_icon(name):
     """Rename a logo file. The apps showing it follow along."""
     body = request.get_json(silent=True)
@@ -501,6 +571,7 @@ def rename_icon(name):
 
 @config_bp.route("/api/icons/<name>", methods=["DELETE"])
 @require_role("admin")
+@_one_at_a_time
 def delete_icon(name):
     """Delete a logo file. One that apps still show is only deleted with
     ?force=1, and those apps are then left without a logo."""

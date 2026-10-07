@@ -187,3 +187,103 @@ def test_misc(anon, admin):
     assert anon.get("/api/health").get_json() == {"ok": True}
     assert admin.post("/api/system/restart").status_code in (200, 501)  # 501 outside the container
     assert anon.get("/api/calendar/upcoming").status_code == 404  # the old server-wide calendar endpoint is gone
+
+
+# --- nothing that changes anything is open ---------------------------------
+# Every route the app has is walked, so a route added later cannot be
+# forgotten: a write is refused for someone not logged in, and for a visitor
+# account, unless it is on one of these two short lists.
+_OPEN_WRITES = {
+    "/api/login",  # how one logs in
+    "/api/logout",
+    "/api/client-log",  # usage lines for the log: fixed events, clipped values, rate-limited
+    "/api/widget/<widget_id>/action",  # refuses by itself unless the widget says allow_anonymous
+    "/api/widget/<widget_id>/integration-action",
+}
+_OWN_ACCOUNT = "/api/me"  # what any logged-in account may change: its own password, profile, settings
+
+
+def _writes(app):
+    for rule in app.url_map.iter_rules():
+        for method in sorted(rule.methods - {"GET", "HEAD", "OPTIONS"}):
+            path = rule.rule.replace("<integration_id>", "sonarr").replace("<username>", VISITOR[0]).replace("<name>", "nothing.png").replace("<widget_id>", "nothing")
+            yield method, rule.rule, path
+
+
+def test_every_write_needs_a_login(app, anon):
+    checked = 0
+    for method, rule, path in _writes(app):
+        if rule in _OPEN_WRITES:
+            continue
+        response = anon.open(path, method=method, json={})
+        assert response.status_code == 401, f"{method} {rule} answered {response.status_code} to someone not logged in"
+        checked += 1
+    assert checked >= 20
+
+
+def test_every_config_write_needs_an_admin(app, visitor):
+    checked = 0
+    for method, rule, path in _writes(app):
+        if rule in _OPEN_WRITES or rule.startswith(_OWN_ACCOUNT):
+            continue
+        response = visitor.open(path, method=method, json={})
+        assert response.status_code == 403, f"{method} {rule} answered {response.status_code} to a visitor account"
+        checked += 1
+    assert checked >= 15
+
+
+def test_a_refused_attempt_is_logged(visitor):
+    seen = _Lines()
+    logger = logging.getLogger("fyr.audit")
+    logger.addHandler(seen)
+    try:
+        assert visitor.post("/api/apps/add", json={"url": "https://example.org"}).status_code == 403
+    finally:
+        logger.removeHandler(seen)
+    assert any(line.startswith('AUDIT refused user="vis1" role="visitor" method="POST" path="/api/apps/add"') for line in seen.lines)
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["javascript:alert(1)", "file:///etc/passwd", "ftp://host/x", "//host/x", "https://", "https://user:pw@host.example/", "https://host.example/a b", "https://host.example/\nicon: x", "https://host.example/\x00", "https://" + "a" * 600 + ".example"],
+)
+def test_an_added_app_must_be_a_plain_web_address(admin, url):
+    assert admin.post("/api/apps/add", json={"url": url}).get_json() == {"error": "invalid_url"}
+
+
+def test_app_addresses_cannot_carry_control_characters(admin):
+    bad = {"apps": [{"title": "X", "url": "https://x.example/\r\nurl: javascript:alert(1)"}]}
+    assert admin.put("/api/apps", json=bad).get_json() == {"error": "invalid_url"}
+
+
+def test_the_layout_only_takes_places_by_app_title(admin):
+    assert admin.put("/api/layout", json={"App": {"x": 1, "y": 2}}).status_code == 200
+    for bad in ([], {"": {"x": 1}}, {"App": {"x": {"deep": 1}}}, {"App": [1, 2]}, {"App": {"x": "y" * 300_000}}, {f"a{i}": 1 for i in range(2100)}):
+        assert admin.put("/api/layout", json=bad).get_json() == {"error": "invalid_body"}
+    assert admin.put("/api/layout", json={}).status_code == 200
+
+
+def test_the_icon_fetch_only_follows_web_redirects():
+    import urllib.error
+
+    from app.routes.config import _fetcher, _WebRedirectsOnly
+
+    assert not any(type(handler).__name__ in ("FileHandler", "FTPHandler", "DataHandler") for handler in _fetcher.handlers)
+    handler = _WebRedirectsOnly()
+    for target in ("file:///etc/passwd", "ftp://host/x", "gopher://host/"):
+        with pytest.raises(urllib.error.HTTPError):
+            handler.redirect_request(None, None, 302, "Found", {}, target)
+
+
+def test_only_admins_see_a_feeds_full_address(admin, visitor, anon):
+    private = "https://news.example:8443/private/feed.xml?token=SECRET"
+    widget = {"id": "feed1", "type": "feed", "x": 0, "y": 0, "w": 3, "h": 4, "feeds": [{"url": private, "name": "News"}]}
+    assert admin.put("/api/widgets", json={"widgets": [widget]}).status_code == 200
+    try:
+        assert admin.get("/api/widgets").get_json()["widgets"][0]["feeds"][0]["url"] == private
+        for client in (visitor, anon):
+            body = client.get("/api/widgets")
+            assert b"SECRET" not in body.data and b"private/feed" not in body.data
+            assert body.get_json()["widgets"][0]["feeds"] == [{"url": "https://news.example:8443/", "name": "News"}]
+    finally:
+        admin.post("/api/widgets/reset")
